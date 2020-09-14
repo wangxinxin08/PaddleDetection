@@ -60,8 +60,15 @@ coverage.xml
 *.json
 *.tar
 *.pyc
+*.txt
+.gitignore
+*.tgz
+*.tar.gz
+
 
 .idea/
+.vscode/
+export_models/
 
 dataset/coco/annotations
 dataset/coco/train2017
