@@ -41,22 +41,22 @@ EvalReader:
   dataset:
     !COCODataSet
     image_dir: images
-    anno_path: annotations/val.json
+    anno_path: annotations/test.json
     dataset_dir: dataset/SKU110K_fixed
   sample_transforms:
   - !DecodeImage
     to_rgb: true
     with_mixup: false
-  - !NormalizeImage
-    is_channel_first: false
-    is_scale: true
-    mean: [0.485,0.456,0.406]
-    std: [0.229, 0.224,0.225]
   - !ResizeImage
     interp: 1
     max_size: 1333
     target_size: 800
     use_cv2: true
+  - !NormalizeImage
+    is_channel_first: false
+    is_scale: true
+    mean: [0.485,0.456,0.406]
+    std: [0.229, 0.224,0.225]
   - !Permute
     channel_first: true
     to_bgr: false
@@ -74,10 +74,8 @@ TestReader:
     # set image_shape if needed
     fields: ['image', 'im_info', 'im_id', 'im_shape']
   dataset:
-    !COCODataSet
-    image_dir: images
-    anno_path: annotations/test.json
-    dataset_dir: dataset/SKU110K_fixed
+    !ImageFolder
+    anno_path: dataset/SKU110K_fixed/annotations/test.json
   sample_transforms:
   - !DecodeImage
     to_rgb: true

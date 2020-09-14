@@ -1,13 +1,13 @@
 architecture: FasterRCNN
-max_iters: 90000
+max_iters: 25000
 use_gpu: true
-snapshot_iter: 10000
+snapshot_iter: 5000
 log_smooth_window: 20
 save_dir: output
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_cos_pretrained.tar
 metric: COCO
 weights: output/faster_rcnn_r50_fpn_1x/model_final
-num_classes: 81
+num_classes: 2
 
 FasterRCNN:
   backbone: ResNet
@@ -76,7 +76,7 @@ BBoxAssigner:
 BBoxHead:
   head: TwoFCHead
   nms:
-    keep_top_k: 100
+    keep_top_k: 500
     nms_threshold: 0.5
     score_threshold: 0.05
 
@@ -88,7 +88,7 @@ LearningRate:
   schedulers:
   - !PiecewiseDecay
     gamma: 0.1
-    milestones: [60000, 80000]
+    milestones: [15000, 20000]
   - !LinearWarmup
     start_factor: 0.1
     steps: 1000
@@ -103,4 +103,4 @@ OptimizerBuilder:
 
 _READER_: 'faster_fpn_reader.yml'
 TrainReader:
-  batch_size: 2
+  batch_size: 8

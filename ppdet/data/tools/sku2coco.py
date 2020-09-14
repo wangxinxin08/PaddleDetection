@@ -87,11 +87,9 @@ class SKU2COCO:
                 self.image_paths[split].append(
                     os.path.join(root, os.path.join(image_dir, img_name))
                 )
-            # get image
-            if img_name not in self.img2id:
                 self.img2id[img_name] = len(self.img2id) # start from 0
-            img_id = self.img2id[img_name]
-            images.append(self.get_image(img_id, w, h, img_name))
+                img_id = self.img2id[img_name]
+                images.append(self.get_image(img_id, w, h, img_name))
             # get annonation
             obj_id = self.obj_id
             if cat not in self.cat2id:
