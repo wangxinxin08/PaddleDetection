@@ -478,7 +478,7 @@ def transform_bbox(bbox, M, w, h, area_thr=0.25, perspective=False):
     y = xy[:, [1, 3, 5, 7]]
     new_bbox = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
     # clip boxes
-    new_bbox = clip_bbox(new_bbox, w, h, area_thr)
+    #new_bbox = clip_bbox(new_bbox, w, h, area_thr)
     return new_bbox
 
 def clip_bbox(bbox, w, h, area_thr=0.25):
@@ -489,6 +489,6 @@ def clip_bbox(bbox, w, h, area_thr=0.25):
     # compute
     area2 = (bbox[:, 2:4] - bbox[:, 0:2]).prod(1)
     area_ratio = area2 / (area1 + 1e-16)
-    mask = area_ratio > self.area_thr
+    mask = area_ratio > area_thr
     bbox = bbox[mask]
     return bbox

@@ -4,15 +4,16 @@ import sys
 from pycocotools.coco import COCO
 import numpy as np
 from PIL import Image
+from copy import deepcopy, copy
 
 sys.path.append('.')
 from ppdet.data.transform.operators import *
 
-def draw_box(im, np_boxes):
+def draw_box(im, boxes1):
     draw_thickness = min(im.size) // 320
     draw = ImageDraw.Draw(im)
 
-    for dt in np_boxes:
+    for dt in boxes1:
         bbox = dt
         xmin, ymin, xmax, ymax = bbox
         w = xmax - xmin
@@ -28,7 +29,39 @@ def draw_box(im, np_boxes):
 
     return im
 
-
+#def draw_box(im, boxes1, boxes2):
+#    draw_thickness = min(im.size) // 320
+#    draw = ImageDraw.Draw(im)
+#
+#    for dt in boxes1:
+#        bbox = dt
+#        xmin, ymin, xmax, ymax = bbox
+#        w = xmax - xmin
+#        h = ymax - ymin
+#        color = (0, 255, 0)
+#
+#        # draw bbox
+#        draw.line(
+#            [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin),
+#             (xmin, ymin)],
+#            width=draw_thickness,
+#            fill=color)
+#
+#    for dt in boxes2:
+#        bbox = dt
+#        xmin, ymin, xmax, ymax = bbox
+#        w = xmax - xmin
+#        h = ymax - ymin
+#        color = (255, 0, 0)
+#
+#        # draw bbox
+#        draw.line(
+#            [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin),
+#             (xmin, ymin)],
+#            width=draw_thickness,
+#            fill=color)
+#
+#    return im
 
 def draw_coco_json(coco_json_file, image_dir, output_dir, sample=10):
     coco = COCO(coco_json_file)
@@ -58,10 +91,16 @@ def draw_coco_json(coco_json_file, image_dir, output_dir, sample=10):
         img_path = coco.loadImgs(img_id)[0]['file_name']
         img_path = os.path.join(image_dir, img_path)
         im = Image.open(img_path)
-        sample = {'image': im, 'gt_bbox': boxes}
-        sample = Rotate(10, 1.0)(sample)
-        im = draw_box(sample['image'], sample['gt_bbox'])
-        im.save(os.path.join(output_dir, '{:08d}.jpg'.format(img_id)))
+        sample = {'image': np.array(im), 'gt_bbox': boxes}
+        im1 = draw_box(im, boxes)
+        im1.save(os.path.join(output_dir, '{:08d}.jpg'.format(img_id)))
+        ops = [Rotate(10, 1.0), RandomRotate(10, 0.0), Shear((10, 10)), RandomShear(10, 10), Translate(0.05), RandomTranslate(0.1, (-0.1, 0.1)), Scale((1.2, 1.2)), RandomScale((0.8, 1.2), (0.8, 1.2))]
+        names = ['r10', 'rr10', 's10', 'rs10', 't10', 'rt10', 's1.2', 'rs1.2']
+        for op, name in zip(ops, names):
+            sample1 = op(deepcopy(sample))
+            im2 = Image.fromarray(sample1['image'], 'RGB')
+            im2 = draw_box(im2, sample1['gt_bbox'])
+            im2.save(os.path.join(output_dir, '{:08d}_{}.jpg'.format(img_id, name)))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser('draw a coco json')

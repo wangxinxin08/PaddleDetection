@@ -44,7 +44,7 @@ from .op_helper import (satisfy_sample_constraint, filter_and_process,
                         generate_sample_bbox, clip_bbox, data_anchor_sampling,
                         satisfy_sample_constraint_coverage, crop_image_sampling,
                         generate_sample_bbox_square, bbox_area_sampling,
-                        is_poly, gaussian_radius, draw_gaussian)
+                        is_poly, gaussian_radius, draw_gaussian, transform_bbox, clip_bbox)
 
 logger = logging.getLogger(__name__)
 
@@ -2564,7 +2564,7 @@ class Rotate(BaseOperator):
                  center=None,
                  area_thr=0.25,
                  border_value=(114, 114, 114)):
-        super(Rotation, self).__init__()
+        super(Rotate, self).__init__()
         self.degree = degree
         self.scale = scale
         self.center = center
@@ -2578,7 +2578,7 @@ class Rotate(BaseOperator):
         # rotate image
         height, width = im.shape[:2]
         if self.center is None:
-            self.center = (w // 2, h // 2)
+            self.center = (width // 2, height // 2)
         M = cv2.getRotationMatrix2D(self.center, self.degree, self.scale)
         im = cv2.warpAffine(im,
                             M, (width, height),
@@ -2595,11 +2595,12 @@ class Rotate(BaseOperator):
 class RandomRotate(Rotate):
     def __init__(self,
                  degree,
-                 scale=0.1,
+                 scale=0.0,
                  center=None,
                  area_thr=0.25,
                  border_value=(114, 114, 114)):
-        if isinstance(degree, int):
+        if isinstance(degree, (int, float)):
+            degree = abs(degree)
             degree = (-degree, degree)
         elif isinstance(degree, list) or isinstance(degree, tuple):
             assert len(degree) == 2, 'len of degree is not equal to 2'
@@ -2614,8 +2615,8 @@ class RandomRotate(Rotate):
 @register_op
 class Shear(BaseOperator):
     def __init__(self, shear, area_thr=0.25, border_value=(114, 114, 114)):
-        super(Shear, BaseOperator).__init__()
-        if isinstance(shear, int):
+        super(Shear, self).__init__()
+        if isinstance(shear, (int, float)):
             shear = (shear, shear)
         elif isinstance(shear, list) or isinstance(shear, tuple):
             assert len(shear) == 2, 'len of shear is not equal to 2'
@@ -2635,8 +2636,8 @@ class Shear(BaseOperator):
         shear_x = math.tan(self.shear[0] * math.pi / 180)
         shear_y = math.tan(self.shear[1] * math.pi / 180)
         M = np.array([[1, shear_x, 0], [shear_y, 1, 0]])
-        im = cv2.wrapAffine(im,
-                            M, [width, height],
+        im = cv2.warpAffine(im,
+                            M, (width, height),
                             borderValue=self.border_value)
 
         # shear box
@@ -2653,15 +2654,17 @@ class RandomShear(Shear):
                  shear_y,
                  area_thr=0.25,
                  border_value=(114, 114, 114)):
-        if isinstance(shear_x, int):
-            shear_x = (shear_x, shear_x)
+        if isinstance(shear_x, (int, float)):
+            shear_x = abs(shear_x)
+            shear_x = (-shear_x, shear_x)
         elif isinstance(shear_x, list) or isinstance(shear_x, tuple):
             assert len(shear_x) == 2, 'len of shear_x is not equal to 2'
         else:
             raise ValueError('shear_x is not reasonable')
 
-        if isinstance(shear_y, int):
-            shear_y = (shear_y, shear_y)
+        if isinstance(shear_y, (int, float)):
+            shear_y = abs(shear_y)
+            shear_y = (-shear_y, shear_y)
         elif isinstance(shear_y, list) or isinstance(shear_y, tuple):
             assert len(shear_y) == 2, 'len of shear_y is not equal to 2'
         else:
@@ -2677,13 +2680,16 @@ class RandomShear(Shear):
 class Translate(BaseOperator):
     def __init__(self, translate, area_thr=0.25, border_value=(114, 114, 114)):
         super(Translate, self).__init__()
-        if isinstance(translate, int):
+        if isinstance(translate, (int, float)):
             translate = (translate, translate)
         elif isinstance(translate, list) or isinstance(translate, tuple):
             assert len(translate) == 2, 'len of translate is not equal to 2'
         else:
             raise ValueError('translate is not reasonable')
-        self.translate = tanslate
+        
+        assert abs(translate[0]) < 1 and abs(translate[1]) < 1, 'translate should be in (-1, 1)'
+
+        self.translate = translate
         self.area_thr = area_thr
         self.border_value = border_value
 
@@ -2700,7 +2706,7 @@ class Translate(BaseOperator):
             max(0, translate_y),
             max(0, translate_x),
             min(height, translate_y + height),
-            min(width, translate_x + height)
+            min(width, translate_x + width)
         ]
         src_cords = [
             max(-translate_y, 0),
@@ -2715,8 +2721,8 @@ class Translate(BaseOperator):
 
         new_bbox = bbox + [translate_x, translate_y, translate_x, translate_y]
         # compute
-        new_bbox = clip_bbox(new_bbox, w, h, area_thr)
-        sample['image'] = canvas
+        new_bbox = clip_bbox(new_bbox, width, height, self.area_thr)
+        sample['image'] = canvas.astype(np.uint8)
         sample['gt_bbox'] = new_bbox.astype(np.float32)
         return sample
 
@@ -2728,15 +2734,17 @@ class RandomTranslate(Translate):
                  translate_y,
                  area_thr=0.25,
                  border_value=(114, 114, 114)):
-        if isinstance(translate_x, int):
-            translate_x = (translate_x, translate_x)
+        if isinstance(translate_x, (int, float)):
+            translate_x = abs(translate_x)
+            translate_x = (-translate_x, translate_x)
         elif isinstance(translate_x, list) or isinstance(translate_x, tuple):
             assert len(translate_x) == 2, 'len of translate_x is not equal to 2'
         else:
             raise ValueError('translate_x is not reasonable')
 
-        if isinstance(translate_y, int):
-            translate_y = (translate_y, translate_y)
+        if isinstance(translate_y, (int, float)):
+            translate_y = abs(translate_y)
+            translate_y = (-translate_y, translate_y)
         elif isinstance(translate_y, list) or isinstance(translate_y, tuple):
             assert len(translate_y) == 2, 'len of translate_y is not equal to 2'
         else:
@@ -2752,14 +2760,14 @@ class RandomTranslate(Translate):
 class Scale(BaseOperator):
     def __init__(self, scale, area_thr=0.25, border_value=(114, 114, 114)):
         super(Scale, self).__init__()
-        if isinstance(scale, int):
+        if isinstance(scale, (int, float)):
             scale = (scale, scale)
         elif isinstance(scale, list) or isinstance(scale, tuple):
             assert len(scale) == 2, 'len of scale is not equal to 2'
         else:
             raise ValueError('scale is not reasonable')
 
-        assert scale[0] > 0 and scale[1] > 0, 'scale should be great than 0'
+        assert scale[0] > 0. and scale[1] > 0., 'scale should be great than 0'
 
         self.scale = scale
         self.area_thr = area_thr
@@ -2773,37 +2781,39 @@ class Scale(BaseOperator):
         height, width = im.shape[:2]
         dsize = (int(self.scale[0] * width), int(self.scale[1] * height))
         dst_img = cv2.resize(im, dsize)
-        canvas = np.ones_like(im) * self.border_value
+        canvas = np.ones_like(im, dtype=np.uint8) * self.border_value
         y_lim = min(height, dsize[1])
         x_lim = min(width, dsize[0])
-        canvas[:y_lim, :x_lim, :] = dst_img[;y_lim, :x_lim, :]
+        canvas[:y_lim, :x_lim, :] = dst_img[:y_lim, :x_lim, :]
         # scale bbox
-        bbox *= [self.scale[0], self.scale[1], self.scale[0], self.scale[1]]
-        bbox = clip_bbox(bbox, width, height, self.area_thr)
+        new_bbox = bbox * [self.scale[0], self.scale[1], self.scale[0], self.scale[1]]
+        new_bbox = clip_bbox(new_bbox, width, height, self.area_thr)
 
-        sample['image'] = canvas
-        sample['gt_bbox'] = bbox
+        sample['image'] = canvas.astype(np.uint8)
+        sample['gt_bbox'] = new_bbox.astype(np.float32)
         return sample
 
 
 @register_op
 class RandomScale(Scale):
     def __init__(self, scale_x, scale_y, area_thr=0.25, border_value=(114, 114, 114)):
-        if isinstance(scale_x, int):
-            scale_x = (0, scale_x)
+        if isinstance(scale_x, (int, float)):
+            assert scale_x > 0., 'scale_x should be great than 0'
+            scale_x = (0., scale_x)
         elif isinstance(scale_x, list) or isinstance(scale_x, tuple):
             assert len(scale_x) == 2, 'len of scale_x is not equal to 2'
         else:
             raise ValueError('scale_x is not reasonable')
 
-        if isinstance(scale_y, int):
-            scale_y = (0, scale_y)
+        if isinstance(scale_y, (int, float)):
+            assert scale_y > 0., 'scale_y should be great than 0'
+            scale_y = (0., scale_y)
         elif isinstance(scale_y, list) or isinstance(scale_y, tuple):
             assert len(scale_y) == 2, 'len of scale_y is not equal to 2'
         else:
             raise ValueError('scale_y is not reasonable')
         
         scale_x = random.uniform(*scale_x)
-        scale_y = random.scale_y(*scale_y)
-        super(RandomScale, self).__init__(scale, scale_y, area_thr, border_value)
+        scale_y = random.uniform(*scale_y)
+        super(RandomScale, self).__init__((scale_x, scale_y), area_thr, border_value)
         
