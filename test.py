@@ -8,17 +8,22 @@ from copy import deepcopy, copy
 
 sys.path.append('.')
 from ppdet.data.transform.operators import *
+from ppdet.utils.colormap import colormap
 
-def draw_box(im, boxes1):
-    draw_thickness = min(im.size) // 320
+def draw_box(im, bbox, label, cnames):
+    draw_thickness = min(im.size) // 160
     draw = ImageDraw.Draw(im)
-
-    for dt in boxes1:
+    catid2color = {}
+    color_list = colormap(rgb=True)[:40]
+    for dt, catid in zip(bbox, label):
         bbox = dt
         xmin, ymin, xmax, ymax = bbox
         w = xmax - xmin
         h = ymax - ymin
-        color = (0, 255, 0)
+        if catid not in catid2color:
+            idx = np.random.randint(len(color_list))
+            catid2color[catid] = color_list[idx]
+        color = tuple(catid2color[catid])
 
         # draw bbox
         draw.line(
@@ -27,41 +32,15 @@ def draw_box(im, boxes1):
             width=draw_thickness,
             fill=color)
 
+        # draw label
+        text = "{}".format(cnames[catid])
+        tw, th = draw.textsize(text)
+        draw.rectangle(
+            [(xmin + 1, ymin - th), (xmin + tw + 1, ymin)], fill=color)
+        draw.text((xmin + 1, ymin - th), text, fill=(255, 255, 255))
+
     return im
 
-#def draw_box(im, boxes1, boxes2):
-#    draw_thickness = min(im.size) // 320
-#    draw = ImageDraw.Draw(im)
-#
-#    for dt in boxes1:
-#        bbox = dt
-#        xmin, ymin, xmax, ymax = bbox
-#        w = xmax - xmin
-#        h = ymax - ymin
-#        color = (0, 255, 0)
-#
-#        # draw bbox
-#        draw.line(
-#            [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin),
-#             (xmin, ymin)],
-#            width=draw_thickness,
-#            fill=color)
-#
-#    for dt in boxes2:
-#        bbox = dt
-#        xmin, ymin, xmax, ymax = bbox
-#        w = xmax - xmin
-#        h = ymax - ymin
-#        color = (255, 0, 0)
-#
-#        # draw bbox
-#        draw.line(
-#            [(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin),
-#             (xmin, ymin)],
-#            width=draw_thickness,
-#            fill=color)
-#
-#    return im
 
 def draw_coco_json(coco_json_file, image_dir, output_dir, sample=10):
     coco = COCO(coco_json_file)
