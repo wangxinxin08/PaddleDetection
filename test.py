@@ -18,6 +18,7 @@ def draw_box(im, bbox, label, cnames):
     color_list = colormap(rgb=True)[:40]
     for dt, catid in zip(bbox, label):
         bbox = dt
+        catid = int(catid[0])
         xmin, ymin, xmax, ymax = bbox
         w = xmax - xmin
         h = ymax - ymin
@@ -63,7 +64,7 @@ def draw_coco_json(coco_json_file, image_dir, output_dir, sample=10):
             score = 1.0
             boxes.append([float(clsid), score, x, y, x + w, y + h])
 
-        gt_bboxes = np.array(bboxes)
+        gt_bboxes = np.array(boxes)
         boxes = gt_bboxes[:, 2:6]
         label = gt_bboxes[:, 0:1]
         img_path = coco.loadImgs(img_id)[0]['file_name']

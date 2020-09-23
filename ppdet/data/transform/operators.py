@@ -2788,7 +2788,7 @@ class RandomTranslate(BaseOperator):
         self.area_thr = area_thr
         self.border_value = border_value
     
-    def __call__(self, sample, context=None)
+    def __call__(self, sample, context=None):
         translate_x = random.uniform(*self.translate_x)
         translate_y = random.uniform(*self.translate_y)
         translate = Translate((translate_x, translate_y), self.area_thr, self.border_value)
@@ -2858,7 +2858,7 @@ class RandomScale(BaseOperator):
         else:
             raise ValueError('scale_y is not reasonable')
         
-        self.scale_x = sclae_x
+        self.scale_x = scale_x
         self.scale_y = scale_y
         self.area_thr = area_thr
         self.border_value = border_value
@@ -2892,8 +2892,8 @@ class RandomPerspective(BaseOperator):
 
         # center 
         C = np.eye(3)
-        C[0, 2] = -img.shape[1] / 2
-        C[1, 2] = -img.shape[0] / 2
+        C[0, 2] = -im.shape[1] / 2
+        C[1, 2] = -im.shape[0] / 2
 
         # perspective
         P = np.eye(3)
@@ -2924,7 +2924,7 @@ class RandomPerspective(BaseOperator):
             if self.perspective:
                 im = cv2.warpPerspective(im, M, dsize=(width, height), borderValue=self.border_value)
             else:
-                im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=self,border_value)
+                im = cv2.warpAffine(im, M[:2], dsize=(width, height), borderValue=self.border_value)
             
         if bbox.shape[0] > 0:
             new_bbox, new_label = transform_bbox(bbox, label, M, width, height, area_thr=self.area_thr, perspective=self.perspective)
