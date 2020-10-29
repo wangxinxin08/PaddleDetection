@@ -46,6 +46,7 @@ TrainReader:
               [30, 61], [62, 45], [59, 119],
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
+    iou_thresh: 0.213
   batch_size: 12
   shuffle: true
   mixup_epoch: 25000

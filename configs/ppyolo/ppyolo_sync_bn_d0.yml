@@ -6,7 +6,7 @@ log_iter: 100
 save_dir: output
 snapshot_iter: 10000
 metric: COCO
-pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_vd_ssld_pretrained.tar
+pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/EfficientNetB0_pretrained.tar
 weights: output/ppyolo/model_final
 num_classes: 80
 use_fine_grained_loss: true
@@ -14,19 +14,14 @@ use_ema: true
 ema_decay: 0.9998
 
 YOLOv3:
-  backbone: ResNet
+  backbone: EfficientNet
   yolo_head: YOLOv3Head
   use_fine_grained_loss: true
 
-ResNet:
-  norm_type: bn
-  freeze_at: 0
-  freeze_norm: false
-  norm_decay: 0.
-  depth: 50
-  feature_maps: [3, 4, 5]
-  variant: d
-  dcn_v2_stages: [5]
+EfficientNet:
+  norm_type: sync_bn
+  scale: b0
+  use_se: true
 
 YOLOv3Head:
   anchor_masks: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
@@ -89,4 +84,4 @@ OptimizerBuilder:
     factor: 0.0005
     type: L2
 
-_READER_: 'ppyolo_reader.yml'
+_READER_: 'ppyolo_reader_iou.yml'
