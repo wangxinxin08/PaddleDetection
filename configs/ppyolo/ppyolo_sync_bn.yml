@@ -89,4 +89,4 @@ OptimizerBuilder:
     factor: 0.0005
     type: L2
 
-_READER_: 'ppyolo_reader_iou.yml'
+_READER_: 'ppyolo_reader.yml'
