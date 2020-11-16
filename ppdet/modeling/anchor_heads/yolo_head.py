@@ -76,7 +76,8 @@ class YOLOv3Head(object):
                  weight_prefix_name='',
                  downsample=[32, 16, 8],
                  scale_x_y=1.0,
-                 clip_bbox=True):
+                 clip_bbox=True,
+                 second_head=False):
         check_version("1.8.4")
         self.conv_block_num = conv_block_num
         self.norm_decay = norm_decay
@@ -98,6 +99,7 @@ class YOLOv3Head(object):
         self.downsample = downsample
         self.scale_x_y = scale_x_y
         self.clip_bbox = clip_bbox
+        self.second_head = second_head
 
     def _create_tensor_from_numpy(self, numpy_array):
         paddle_array = fluid.layers.create_global_var(
@@ -379,6 +381,72 @@ class YOLOv3Head(object):
                 route = self._upsample(route)
 
         return outputs
+    
+    def _get_outputs2(self, input, is_train=True):
+        """
+        Get YOLOv3 head output
+
+        Args:
+            input (list): List of Variables, output of backbone stages
+            is_train (bool): whether in train or test mode
+
+        Returns:
+            outputs (list): Variables of each output layer
+        """
+
+        outputs = []
+
+        # get last out_layer_num blocks in reverse order
+        out_layer_num = len(self.anchor_masks)
+        blocks = input[-1:-out_layer_num - 1:-1]
+
+        route = None
+        for i, block in enumerate(blocks):
+            if i > 0:  # perform concat in first 2 detection_block
+                block = fluid.layers.concat(input=[route, block], axis=1)
+            route, tip = self._detection_block(
+                block,
+                channel=64 * (2**out_layer_num) // (2**i),
+                is_first=i == 0,
+                is_test=(not is_train),
+                conv_block_num=self.conv_block_num,
+                name=self.prefix_name + "yolo_block2.{}".format(i))
+
+            # out channel number = mask_num * (5 + class_num)
+            if self.iou_aware:
+                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
+            else:
+                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 5)
+            with fluid.name_scope('yolo_output2'):
+                block_out = fluid.layers.conv2d(
+                    input=tip,
+                    num_filters=num_filters,
+                    filter_size=1,
+                    stride=1,
+                    padding=0,
+                    act=None,
+                    param_attr=ParamAttr(
+                        name=self.prefix_name +
+                        "yolo_output2.{}.conv.weights".format(i)),
+                    bias_attr=ParamAttr(
+                        regularizer=L2Decay(0.),
+                        name=self.prefix_name +
+                        "yolo_output2.{}.conv.bias".format(i)))
+                outputs.append(block_out)
+
+            if i < len(blocks) - 1:
+                # do not perform upsample in the last detection_block
+                route = self._conv_bn(
+                    input=route,
+                    ch_out=256 // (2**i),
+                    filter_size=1,
+                    stride=1,
+                    padding=0,
+                    name=self.prefix_name + "yolo_transition2.{}".format(i))
+                # upsample
+                route = self._upsample(route)
+
+        return outputs
 
     def get_loss(self, input, gt_box, gt_label, gt_score, targets):
         """
@@ -397,11 +465,18 @@ class YOLOv3Head(object):
 
         """
         outputs = self._get_outputs(input, is_train=True)
-
-        return self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
+        losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes,
                               self.prefix_name)
+        if self.second_head==True:
+            outputs2 = self._get_outputs2(input, is_train=True)
+            losses2 = self.yolo_loss(outputs2, gt_box, gt_label, gt_score, targets,
+                              self.anchors, self.anchor_masks,
+                              self.mask_anchors, self.num_classes,
+                              self.prefix_name, second_head=True)
+            return dict(losses1, **losses2)
+        return losses1
 
     def get_prediction(self, input, im_size, exclude_nms=False):
         """
@@ -637,3 +712,5 @@ class YOLOv4Head(YOLOv3Head):
             outputs.append(block_out)
 
         return outputs
+
+    

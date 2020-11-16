@@ -72,11 +72,11 @@ class YOLOv3Loss(object):
                 "training batch size should be set by TrainReader.batch_size")
 
     def __call__(self, outputs, gt_box, gt_label, gt_score, targets, anchors,
-                 anchor_masks, mask_anchors, num_classes, prefix_name):
+                 anchor_masks, mask_anchors, num_classes, prefix_name, second_head=False):
         if self._use_fine_grained_loss:
             return self._get_fine_grained_loss(
                 outputs, targets, gt_box, self._train_batch_size, num_classes,
-                mask_anchors, self._ignore_thresh)
+                mask_anchors, self._ignore_thresh, second_head)
         else:
             losses = []
             for i, output in enumerate(outputs):
@@ -109,6 +109,7 @@ class YOLOv3Loss(object):
                                num_classes,
                                mask_anchors,
                                ignore_thresh,
+                               second_head,
                                eps=1.e-10):
         """
         Calculate fine grained YOLOv3 loss
@@ -209,17 +210,29 @@ class YOLOv3Loss(object):
             loss_objs.append(
                 fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg))
             loss_clss.append(fluid.layers.reduce_mean(loss_cls))
-
-        losses_all = {
+        
+        if second_head==True:
+            losses_all = {
+            "loss_xy2": fluid.layers.sum(loss_xys),
+            "loss_wh2": fluid.layers.sum(loss_whs),
+            "loss_obj2": fluid.layers.sum(loss_objs),
+            "loss_cls2": fluid.layers.sum(loss_clss),
+            }
+            if self._iou_loss is not None:
+                losses_all["loss_iou2"] = fluid.layers.sum(loss_ious)
+            if self._iou_aware_loss is not None:
+                losses_all["loss_iou_aware2"] = fluid.layers.sum(loss_iou_awares)
+        else:
+            losses_all = {
             "loss_xy": fluid.layers.sum(loss_xys),
             "loss_wh": fluid.layers.sum(loss_whs),
             "loss_obj": fluid.layers.sum(loss_objs),
             "loss_cls": fluid.layers.sum(loss_clss),
-        }
-        if self._iou_loss is not None:
-            losses_all["loss_iou"] = fluid.layers.sum(loss_ious)
-        if self._iou_aware_loss is not None:
-            losses_all["loss_iou_aware"] = fluid.layers.sum(loss_iou_awares)
+            }
+            if self._iou_loss is not None:
+                losses_all["loss_iou"] = fluid.layers.sum(loss_ious)
+            if self._iou_aware_loss is not None:
+                losses_all["loss_iou_aware"] = fluid.layers.sum(loss_iou_awares)
         return losses_all
 
     def _split_ioup(self, output, an_num, num_classes):
