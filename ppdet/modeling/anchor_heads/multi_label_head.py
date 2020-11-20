@@ -55,7 +55,6 @@ class MultiLabelHead(object):
         """
         out_layer_num = 3
         blocks = input[-1:-out_layer_num - 1:-1]
-        fluid.layers.Print(blocks[0])
         pool = fluid.layers.pool2d(input=blocks[0], pool_size=19, pool_type='avg', global_pooling=True)
         stdv = 1.0 / math.sqrt(pool.shape[1] * 1.0)
         fc_param_attr = fluid.param_attr.ParamAttr(
