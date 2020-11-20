@@ -200,13 +200,15 @@ class Gt2YoloTarget(BaseOperator):
                  anchor_masks,
                  downsample_ratios,
                  num_classes=80,
-                 iou_thresh=1.):
+                 iou_thresh=1.,
+                 multi_label=False):
         super(Gt2YoloTarget, self).__init__()
         self.anchors = anchors
         self.anchor_masks = anchor_masks
         self.downsample_ratios = downsample_ratios
         self.num_classes = num_classes
         self.iou_thresh = iou_thresh
+        self.multi_label = multi_label
 
     def __call__(self, samples, context=None):
         assert len(self.anchor_masks) == len(self.downsample_ratios), \
@@ -214,12 +216,22 @@ class Gt2YoloTarget(BaseOperator):
 
         h, w = samples[0]['image'].shape[1:3]
         an_hw = np.array(self.anchors) / np.array([[w, h]])
+        #rint(len(samples))
         for sample in samples:
             # im, gt_bbox, gt_class, gt_score = sample
             im = sample['image']
             gt_bbox = sample['gt_bbox']
             gt_class = sample['gt_class']
             gt_score = sample['gt_score']
+            #print(self.multi_label)
+            if self.multi_label == True:
+                multi_label_target = np.zeros(
+                    (self.num_classes),
+                    dtype=np.float32)
+                for b in range(gt_bbox.shape[0]):
+                    cls = gt_class[b]
+                    multi_label_target[cls] = 1.
+                sample['multi_label_target'] = multi_label_target
             for i, (
                     mask, downsample_ratio
             ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):

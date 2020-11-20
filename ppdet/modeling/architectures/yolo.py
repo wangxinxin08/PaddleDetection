@@ -37,17 +37,21 @@ class YOLOv3(object):
     """
 
     __category__ = 'architecture'
-    __inject__ = ['backbone', 'yolo_head']
+    __inject__ = ['backbone', 'yolo_head', 'multi_label_head']
     __shared__ = ['use_fine_grained_loss']
 
     def __init__(self,
                  backbone,
                  yolo_head='YOLOv3Head',
-                 use_fine_grained_loss=False):
+                 use_fine_grained_loss=False,
+                 multi_label_head = 'MultiLabelHead',
+                 use_multi_label=False):
         super(YOLOv3, self).__init__()
         self.backbone = backbone
         self.yolo_head = yolo_head
         self.use_fine_grained_loss = use_fine_grained_loss
+        self.multi_label_head = multi_label_head
+        self.use_multi_label = use_multi_label
 
     def build(self, feed_vars, mode='train', exclude_nms=False):
         im = feed_vars['image']
@@ -72,7 +76,7 @@ class YOLOv3(object):
             gt_bbox = feed_vars['gt_bbox']
             gt_class = feed_vars['gt_class']
             gt_score = feed_vars['gt_score']
-
+            multi_label_target = feed_vars['multi_label_target']
             # Get targets for splited yolo loss calculation
             num_output_layer = len(self.yolo_head.anchor_masks)
             targets = []
@@ -80,9 +84,10 @@ class YOLOv3(object):
                 k = 'target{}'.format(i)
                 if k in feed_vars:
                     targets.append(feed_vars[k])
-
+            
             loss = self.yolo_head.get_loss(body_feats, gt_bbox, gt_class,
                                            gt_score, targets)
+            loss = self.multi_label_head.get_loss(loss, body_feats, multi_label_target)                              
             total_loss = fluid.layers.sum(list(loss.values()))
             loss.update({'loss': total_loss})
             return loss
@@ -126,6 +131,9 @@ class YOLOv3(object):
 
             inputs_def.update(targets_def)
 
+        if self.use_multi_label:
+            inputs_def['multi_label_target'] = {'shape': [None, self.yolo_head.num_classes],   'dtype': 'float32',   'lod_level': 0}
+
         return inputs_def
 
     def build_inputs(
@@ -143,6 +151,7 @@ class YOLOv3(object):
             num_output_layer = len(self.yolo_head.anchor_masks)
             fields.extend(
                 ['target{}'.format(i) for i in range(num_output_layer)])
+        print("build inputs:",fields)
         feed_vars = OrderedDict([(key, fluid.data(
             name=key,
             shape=inputs_def[key]['shape'],
