@@ -45,7 +45,7 @@ YOLOv3Head:
   second_head: true
 
 YOLOv3Loss:
-  batch_size: 24
+  batch_size: 12
   ignore_thresh: 0.7
   scale_x_y: 1.05
   label_smooth: false
