@@ -66,6 +66,6 @@ class MultiLabelHead(object):
     def get_loss(self, loss, body_feats, multi_label_target):
         outputs = self._get_outputs(body_feats, is_train=True)
         losses = fluid.layers.sigmoid_cross_entropy_with_logits(outputs, multi_label_target)
-        loss['loss_multilLabel'] = fluid.layers.reduce_sum(losses)
+        loss['loss_multilLabel'] = fluid.layers.reduce_sum(losses)/fluid.layers.reduce_sum(multi_label_target)
         return loss
 
