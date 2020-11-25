@@ -1,12 +1,12 @@
 TrainReader:
   inputs_def:
-    fields: ['image', 'gt_bbox', 'gt_class', 'gt_score','multi_label_target']
+    fields: ['image', 'gt_bbox', 'gt_class', 'gt_score']
     num_max_boxes: 50
   dataset:
     !COCODataSet
-      image_dir: train2017
-      anno_path: annotations/instances_train2017.json
-      dataset_dir: dataset/coco
+      image_dir: train
+      anno_path: annotations/tiny_train.json
+      dataset_dir: /paddle/obj365
       with_background: false
   sample_transforms:
     - !DecodeImage
@@ -46,14 +46,14 @@ TrainReader:
               [30, 61], [62, 45], [59, 119],
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
-    multi_label: True
-  batch_size: 12
+  batch_size: 8
   shuffle: true
-  mixup_epoch: 25000
+  mixup_epoch: 250
   drop_last: true
   worker_num: 8
-  bufsize: 4
+  bufsize: 16
   use_process: true
+
 
 EvalReader:
   inputs_def:
@@ -61,9 +61,9 @@ EvalReader:
     num_max_boxes: 50
   dataset:
     !COCODataSet
-      image_dir: val2017
-      anno_path: annotations/instances_val2017.json
-      dataset_dir: dataset/coco
+      image_dir: val
+      anno_path: annotations/tiny_val.json
+      dataset_dir: /paddle/obj365
       with_background: false
   sample_transforms:
     - !DecodeImage
@@ -84,7 +84,7 @@ EvalReader:
   batch_size: 8
   drop_empty: false
   worker_num: 8
-  bufsize: 4
+  bufsize: 16
 
 TestReader:
   inputs_def:
@@ -92,7 +92,7 @@ TestReader:
     fields: ['image', 'im_size', 'im_id']
   dataset:
     !ImageFolder
-      anno_path: annotations/instances_val2017.json
+      anno_path: annotations/tiny_val.json
       with_background: false
   sample_transforms:
     - !DecodeImage

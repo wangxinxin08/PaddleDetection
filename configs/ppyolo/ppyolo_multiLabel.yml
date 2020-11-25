@@ -22,7 +22,7 @@ YOLOv3:
 
 
 ResNet:
-  norm_type: bn
+  norm_type: sync_bn
   freeze_at: 0
   freeze_norm: false
   norm_decay: 0.
