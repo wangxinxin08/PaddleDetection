@@ -45,13 +45,15 @@ class YOLOv3(object):
                  yolo_head='YOLOv3Head',
                  use_fine_grained_loss=False,
                  multi_label_head = 'MultiLabelHead',
-                 use_multi_label=False):
+                 use_multi_label=False,
+                 multi_label_on_FPN=False):
         super(YOLOv3, self).__init__()
         self.backbone = backbone
         self.yolo_head = yolo_head
         self.use_fine_grained_loss = use_fine_grained_loss
         self.multi_label_head = multi_label_head
         self.use_multi_label = use_multi_label
+        self.multi_label_on_FPN = multi_label_on_FPN
 
     def build(self, feed_vars, mode='train', exclude_nms=False):
         im = feed_vars['image']
@@ -85,9 +87,12 @@ class YOLOv3(object):
                 if k in feed_vars:
                     targets.append(feed_vars[k])
             
-            loss = self.yolo_head.get_loss(body_feats, gt_bbox, gt_class,
+            loss, routes = self.yolo_head.get_loss(body_feats, gt_bbox, gt_class,
                                            gt_score, targets)
-            loss = self.multi_label_head.get_loss(loss, body_feats, multi_label_target)                              
+            if self.multi_label_on_FPN:
+                loss = self.multi_label_head.get_loss(loss, routes, multi_label_target) 
+            else:
+                loss = self.multi_label_head.get_loss(loss, body_feats[0:1], multi_label_target)                           
             total_loss = fluid.layers.sum(list(loss.values()))
             loss.update({'loss': total_loss})
             return loss

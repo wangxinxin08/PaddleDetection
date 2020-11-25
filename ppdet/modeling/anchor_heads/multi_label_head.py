@@ -42,6 +42,42 @@ class MultiLabelHead(object):
         check_version("1.8.4")
         self.num_classes = num_classes
         self.second_head = second_head
+
+    def _conv_bn(self,
+                 input,
+                 ch_out,
+                 filter_size,
+                 stride,
+                 padding,
+                 act='leaky',
+                 name=None):
+        conv = fluid.layers.conv2d(
+            input=input,
+            num_filters=ch_out,
+            filter_size=filter_size,
+            stride=stride,
+            padding=padding,
+            act=None,
+            param_attr=ParamAttr(name=name + ".conv.weights"),
+            bias_attr=False)
+
+        bn_name = name + ".bn"
+        bn_param_attr = ParamAttr(
+            regularizer=L2Decay(0.), name=bn_name + '.scale')
+        bn_bias_attr = ParamAttr(
+            regularizer=L2Decay(0.), name=bn_name + '.offset')
+        out = fluid.layers.batch_norm(
+            input=conv,
+            act=None,
+            param_attr=bn_param_attr,
+            bias_attr=bn_bias_attr,
+            moving_mean_name=bn_name + '.mean',
+            moving_variance_name=bn_name + '.var')
+
+        if act == 'leaky':
+            out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+        return out
+
     def _get_outputs(self, input, is_train=True):
         """
         Get YOLOv3 head output
@@ -53,19 +89,35 @@ class MultiLabelHead(object):
         Returns:
             outputs (list): Variables of each output layer
         """
-        out_layer_num = 3
-        blocks = input[-1:-out_layer_num - 1:-1]
-        pool = fluid.layers.pool2d(input=blocks[0], pool_size=19, pool_type='avg', global_pooling=True)
-        stdv = 1.0 / math.sqrt(pool.shape[1] * 1.0)
-        fc_param_attr = fluid.param_attr.ParamAttr(
-            initializer=fluid.initializer.Uniform(-stdv, stdv), trainable=True)
-        outputs = fluid.layers.fc(
-            input=pool, size=self.num_classes, act=None, param_attr=fc_param_attr)
+        #out_layer_num = 3
+        #blocks = input[-1:-out_layer_num - 1:-1]
+        #pool = fluid.layers.pool2d(input=blocks[0], pool_size=19, pool_type='avg', global_pooling=True)
+        outputs = []
+        for i, fpn_feature in enumerate(input):
+            multiLabel_conv = self._conv_bn(
+                fpn_feature,
+                fpn_feature.shape[1]*2,
+                filter_size=3,
+                stride=1,
+                padding=1,
+                name='multiLabel{}'.format(i))
+            pool = fluid.layers.pool2d(input=multiLabel_conv, pool_size=19, pool_type='avg', global_pooling=True)
+            stdv = 1.0 / math.sqrt(pool.shape[1] * 1.0)
+            fc_param_attr = fluid.param_attr.ParamAttr(
+                initializer=fluid.initializer.Uniform(-stdv, stdv), trainable=True)
+            output = fluid.layers.fc(
+                input=pool, size=self.num_classes, act=None, param_attr=fc_param_attr)
+            outputs.append(output)
         return outputs
 
     def get_loss(self, loss, body_feats, multi_label_target):
         outputs = self._get_outputs(body_feats, is_train=True)
-        losses = fluid.layers.sigmoid_cross_entropy_with_logits(outputs, multi_label_target)
-        loss['loss_multilLabel'] = fluid.layers.reduce_sum(losses)
+        if len(outputs) == 1:
+            losses = fluid.layers.sigmoid_cross_entropy_with_logits(outputs[0], multi_label_target)
+            loss['loss_multiLabel'] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target)
+        else:
+            for i, output in enumerate(outputs):
+                losses = fluid.layers.sigmoid_cross_entropy_with_logits(output, multi_label_target)
+                loss['loss_multiLabel{}'.format(i)] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target)
         return loss
 

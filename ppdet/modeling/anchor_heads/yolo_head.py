@@ -329,7 +329,7 @@ class YOLOv3Head(object):
         """
 
         outputs = []
-
+        routes = []
         # get last out_layer_num blocks in reverse order
         out_layer_num = len(self.anchor_masks)
         blocks = input[-1:-out_layer_num - 1:-1]
@@ -345,7 +345,7 @@ class YOLOv3Head(object):
                 is_test=(not is_train),
                 conv_block_num=self.conv_block_num,
                 name=self.prefix_name + "yolo_block.{}".format(i))
-
+            routes.append(route)
             # out channel number = mask_num * (5 + class_num)
             if self.iou_aware:
                 num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
@@ -380,7 +380,7 @@ class YOLOv3Head(object):
                 # upsample
                 route = self._upsample(route)
 
-        return outputs
+        return outputs, routes
     
     def _get_outputs2(self, input, is_train=True):
         """
@@ -464,7 +464,7 @@ class YOLOv3Head(object):
             loss (Variable): The loss Variable of YOLOv3 network.
 
         """
-        outputs = self._get_outputs(input, is_train=True)
+        outputs, routes = self._get_outputs(input, is_train=True)
         losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes,
@@ -476,7 +476,7 @@ class YOLOv3Head(object):
                               self.mask_anchors, self.num_classes,
                               self.prefix_name, second_head=True)
             return dict(losses1, **losses2)
-        return losses1
+        return losses1, routes
 
     def get_prediction(self, input, im_size, exclude_nms=False):
         """

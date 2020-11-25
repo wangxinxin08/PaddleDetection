@@ -18,6 +18,8 @@ YOLOv3:
   yolo_head: YOLOv3Head
   use_fine_grained_loss: true
   use_multi_label: true
+  multi_label_on_FPN: false
+
 
 ResNet:
   norm_type: bn
