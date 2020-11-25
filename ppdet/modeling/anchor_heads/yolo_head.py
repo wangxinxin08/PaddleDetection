@@ -491,7 +491,7 @@ class YOLOv3Head(object):
 
         """
 
-        outputs = self._get_outputs(input, is_train=False)
+        outputs, routes = self._get_outputs(input, is_train=False)
 
         boxes = []
         scores = []
