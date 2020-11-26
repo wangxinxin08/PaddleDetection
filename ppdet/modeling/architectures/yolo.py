@@ -46,7 +46,8 @@ class YOLOv3(object):
                  use_fine_grained_loss=False,
                  multi_label_head = 'MultiLabelHead',
                  use_multi_label=False,
-                 multi_label_on_FPN=False):
+                 multi_label_on_FPN=False,
+                 target_by_level=False):
         super(YOLOv3, self).__init__()
         self.backbone = backbone
         self.yolo_head = yolo_head
@@ -54,6 +55,7 @@ class YOLOv3(object):
         self.multi_label_head = multi_label_head
         self.use_multi_label = use_multi_label
         self.multi_label_on_FPN = multi_label_on_FPN
+        self.target_by_level = target_by_level
 
     def build(self, feed_vars, mode='train', exclude_nms=False):
         im = feed_vars['image']
@@ -79,18 +81,27 @@ class YOLOv3(object):
             gt_class = feed_vars['gt_class']
             gt_score = feed_vars['gt_score']
             multi_label_target = feed_vars['multi_label_target']
+            print(feed_vars.keys())
             # Get targets for splited yolo loss calculation
             num_output_layer = len(self.yolo_head.anchor_masks)
             targets = []
+            multi_label_target_by_level = []
             for i in range(num_output_layer):
                 k = 'target{}'.format(i)
                 if k in feed_vars:
                     targets.append(feed_vars[k])
+                if self.target_by_level:
+                    m = 'target{}_multiLabel'.format(i)
+                    multi_label_target_by_level.append(feed_vars[m])
+
             
             loss, routes = self.yolo_head.get_loss(body_feats, gt_bbox, gt_class,
                                            gt_score, targets)
             if self.multi_label_on_FPN:
-                loss = self.multi_label_head.get_loss(loss, routes, multi_label_target) 
+                if self.target_by_level:
+                    loss = self.multi_label_head.get_loss(loss, routes, multi_label_target_by_level) 
+                else:
+                    loss = self.multi_label_head.get_loss(loss, routes, multi_label_target) 
             else:
                 loss = self.multi_label_head.get_loss(loss, body_feats[0:1], multi_label_target)                           
             total_loss = fluid.layers.sum(list(loss.values()))
@@ -122,6 +133,9 @@ class YOLOv3(object):
             targets_def = {}
             for i in range(num_output_layer):
                 targets_def['target{}'.format(i)] = {'shape': [None, 3, None, None, None],  'dtype': 'float32',   'lod_level': 0}
+            #if self.target_by_level:
+            for i in range(num_output_layer):
+                inputs_def['target{}_multiLabel'.format(i)] = {'shape': [None, self.yolo_head.num_classes],  'dtype': 'float32',   'lod_level': 0}
             # yapf: enable
 
             downsample = 32
@@ -156,7 +170,9 @@ class YOLOv3(object):
             num_output_layer = len(self.yolo_head.anchor_masks)
             fields.extend(
                 ['target{}'.format(i) for i in range(num_output_layer)])
-        print("build inputs:",fields)
+            fields.extend(
+                ['target{}_multiLabel'.format(i) for i in range(num_output_layer)])
+        #print("build inputs:",fields)
         feed_vars = OrderedDict([(key, fluid.data(
             name=key,
             shape=inputs_def[key]['shape'],

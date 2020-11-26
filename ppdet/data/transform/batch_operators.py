@@ -201,7 +201,8 @@ class Gt2YoloTarget(BaseOperator):
                  downsample_ratios,
                  num_classes=80,
                  iou_thresh=1.,
-                 multi_label=False):
+                 multi_label=False,
+                 target_by_level=False):
         super(Gt2YoloTarget, self).__init__()
         self.anchors = anchors
         self.anchor_masks = anchor_masks
@@ -209,6 +210,7 @@ class Gt2YoloTarget(BaseOperator):
         self.num_classes = num_classes
         self.iou_thresh = iou_thresh
         self.multi_label = multi_label
+        self.target_by_level = target_by_level
 
     def __call__(self, samples, context=None):
         assert len(self.anchor_masks) == len(self.downsample_ratios), \
@@ -235,6 +237,10 @@ class Gt2YoloTarget(BaseOperator):
             for i, (
                     mask, downsample_ratio
             ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
+                if self.target_by_level:
+                    target_by_stage = np.zeros(
+                        (self.num_classes),
+                        dtype=np.float32)
                 grid_h = int(h / downsample_ratio)
                 grid_w = int(w / downsample_ratio)
                 target = np.zeros(
@@ -281,6 +287,10 @@ class Gt2YoloTarget(BaseOperator):
                         # classification
                         target[best_n, 6 + cls, gj, gi] = 1.
 
+                        # multiLabel
+                        if self.target_by_level:
+                            target_by_stage[cls] = 1.
+
                     # For non-matched anchors, calculate the target if the iou 
                     # between anchor and gt is larger than iou_thresh
                     if self.iou_thresh < 1:
@@ -304,7 +314,11 @@ class Gt2YoloTarget(BaseOperator):
 
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
-                sample['target{}'.format(i)] = target
+                if self.target_by_level:
+                    sample['target{}'.format(i)] = target
+                    sample['target{}_multiLabel'.format(i)] = target_by_stage
+                else:
+                    sample['target{}'.format(i)] = target
         return samples
 
 

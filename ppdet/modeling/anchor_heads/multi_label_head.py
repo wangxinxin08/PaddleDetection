@@ -116,8 +116,13 @@ class MultiLabelHead(object):
             losses = fluid.layers.sigmoid_cross_entropy_with_logits(outputs[0], multi_label_target)
             loss['loss_multiLabel'] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target)
         else:
-            for i, output in enumerate(outputs):
-                losses = fluid.layers.sigmoid_cross_entropy_with_logits(output, multi_label_target)
-                loss['loss_multiLabel{}'.format(i)] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target)
+            if isinstance(multi_label_target,list):
+                for i, output in enumerate(outputs):
+                    losses = fluid.layers.sigmoid_cross_entropy_with_logits(output, multi_label_target[2-i])
+                    loss['loss_multiLabel{}'.format(i)] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target[2-i])
+            else:
+                for i, output in enumerate(outputs):
+                    losses = fluid.layers.sigmoid_cross_entropy_with_logits(output, multi_label_target)
+                    loss['loss_multiLabel{}'.format(i)] = fluid.layers.reduce_sum(losses) / fluid.layers.reduce_sum(multi_label_target)
         return loss
 
