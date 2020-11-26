@@ -47,7 +47,7 @@ TrainReader:
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
     multi_label: True
-    target_by_level: True
+    target_by_level: False
   batch_size: 12
   shuffle: true
   mixup_epoch: 25000

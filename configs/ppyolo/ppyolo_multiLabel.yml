@@ -19,7 +19,7 @@ YOLOv3:
   use_fine_grained_loss: true
   use_multi_label: true
   multi_label_on_FPN: true
-  target_by_level: true
+  target_by_level: false
 
 
 ResNet:

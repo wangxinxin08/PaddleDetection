@@ -134,8 +134,9 @@ class YOLOv3(object):
             for i in range(num_output_layer):
                 targets_def['target{}'.format(i)] = {'shape': [None, 3, None, None, None],  'dtype': 'float32',   'lod_level': 0}
             #if self.target_by_level:
-            for i in range(num_output_layer):
-                inputs_def['target{}_multiLabel'.format(i)] = {'shape': [None, self.yolo_head.num_classes],  'dtype': 'float32',   'lod_level': 0}
+            if self.target_by_level:
+                for i in range(num_output_layer):
+                    inputs_def['target{}_multiLabel'.format(i)] = {'shape': [None, self.yolo_head.num_classes],  'dtype': 'float32',   'lod_level': 0}
             # yapf: enable
 
             downsample = 32
@@ -170,8 +171,9 @@ class YOLOv3(object):
             num_output_layer = len(self.yolo_head.anchor_masks)
             fields.extend(
                 ['target{}'.format(i) for i in range(num_output_layer)])
-            fields.extend(
-                ['target{}_multiLabel'.format(i) for i in range(num_output_layer)])
+            if self.target_by_level:
+                fields.extend(
+                    ['target{}_multiLabel'.format(i) for i in range(num_output_layer)])
         #print("build inputs:",fields)
         feed_vars = OrderedDict([(key, fluid.data(
             name=key,
