@@ -27,7 +27,7 @@ import logging
 from ppdet.core.workspace import register, serializable
 
 from .parallel_map import ParallelMap
-from .transform.batch_operators import Gt2YoloTarget
+from .transform.batch_operators import Gt2YoloTarget, Gt2YoloTarget_1vN
 
 __all__ = ['Reader', 'create_reader']
 

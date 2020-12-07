@@ -196,7 +196,6 @@ class YOLOv3Loss(object):
                 loss_iou_aware = fluid.layers.reduce_sum(
                     loss_iou_aware, dim=[1, 2, 3])
                 loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
-
             loss_obj_pos, loss_obj_neg = self._calc_obj_loss(
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
@@ -337,7 +336,7 @@ class YOLOv3Loss(object):
             downsample_ratio=downsample,
             clip_bbox=False,
             scale_x_y=scale_x_y)
-
+        
         # 2. split pred bbox and gt bbox by sample, calculate IoU between pred bbox
         #    and gt bbox in each sample
         if batch_size > 1:

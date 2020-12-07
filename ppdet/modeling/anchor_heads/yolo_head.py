@@ -32,7 +32,7 @@ try:
 except Exception:
     from collections import Sequence
 from ppdet.utils.check import check_version
-
+from ppdet.modeling.ops import YOLOAnchorGenerator
 __all__ = ['YOLOv3Head', 'YOLOv4Head']
 
 
@@ -59,6 +59,7 @@ class YOLOv3Head(object):
                  anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45],
                           [59, 119], [116, 90], [156, 198], [373, 326]],
                  anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
+                 #anchor_generator=YOLOAnchorGenerator.__dict__,
                  drop_block=False,
                  coord_conv=False,
                  iou_aware=False,
@@ -79,6 +80,7 @@ class YOLOv3Head(object):
                  clip_bbox=True,
                  second_head=False):
         check_version("1.8.4")
+        #self.anchor_generator = anchor_generator
         self.conv_block_num = conv_block_num
         self.norm_decay = norm_decay
         self.num_classes = num_classes
@@ -465,6 +467,7 @@ class YOLOv3Head(object):
 
         """
         outputs = self._get_outputs(input, is_train=True)
+        print(outputs)
         losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes,
@@ -476,6 +479,30 @@ class YOLOv3Head(object):
                               self.mask_anchors, self.num_classes,
                               self.prefix_name, second_head=True)
             return dict(losses1, **losses2)
+        return losses1
+
+    def get_loss_byAssigner(self, input, gt_box, gt_label, gt_score, targets):
+        """
+        Get final loss of network of YOLOv3.
+
+        Args:
+            input (list): List of Variables, output of backbone stages
+            gt_box (Variable): The ground-truth boudding boxes.
+            gt_label (Variable): The ground-truth class labels.
+            gt_score (Variable): The ground-truth boudding boxes mixup scores.
+            targets ([Variables]): List of Variables, the targets for yolo
+                                   loss calculatation.
+
+        Returns:
+            loss (Variable): The loss Variable of YOLOv3 network.
+
+        """
+        outputs = self._get_outputs(input, is_train=True)
+        anchors = self.anchor_generator()
+        losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
+                              self.anchors, self.anchor_masks,
+                              self.mask_anchors, self.num_classes,
+                              self.prefix_name)
         return losses1
 
     def get_prediction(self, input, im_size, exclude_nms=False):

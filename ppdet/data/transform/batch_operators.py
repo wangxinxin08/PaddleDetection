@@ -26,8 +26,8 @@ import cv2
 import numpy as np
 
 from .operators import register_op, BaseOperator
-from .op_helper import jaccard_overlap, gaussian2D
-
+from .op_helper import jaccard_overlap, gaussian2D, overlap_matrix
+#from ppdet.modeling.ops import YOLOAnchorGenerator, Max_IoU_Assigner
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -35,6 +35,7 @@ __all__ = [
     'RandomShape',
     'PadMultiScaleTest',
     'Gt2YoloTarget',
+    'Gt2YoloTarget_1vN',
     'Gt2FCOSTarget',
     'Gt2TTFTarget',
 ]
@@ -295,6 +296,116 @@ class Gt2YoloTarget(BaseOperator):
                 sample['target{}'.format(i)] = target
         return samples
 
+@register_op
+class Gt2YoloTarget_1vN(BaseOperator):
+    """
+    Generate YOLOv3 targets by groud truth data, this operator is only used in
+    fine grained YOLOv3 loss mode
+    """
+
+    def __init__(self,
+                 anchors,
+                 anchor_masks,
+                 downsample_ratios,
+                 num_classes=80,
+                 iou_thresh=1.,
+                 eps=0.000001):
+        super(Gt2YoloTarget_1vN, self).__init__()
+        self.anchors = anchors
+        self.anchor_masks = anchor_masks
+        self.downsample_ratios = downsample_ratios
+        #self.assigner = 
+        self.num_classes = num_classes
+        self.iou_thresh = iou_thresh
+        self.eps = eps
+        
+    def _get_reg_target(self, bboxes, gt_bboxes, stride):
+        """Get box regression transformation deltas that can be used to
+        transform the ``bboxes`` into the ``gt_bboxes``.
+        Args:
+            bboxes (torch.Tensor): Source boxes, e.g., anchors.
+            gt_bboxes (torch.Tensor): Target of the transformation, e.g.,
+                ground-truth boxes.
+            stride (torch.Tensor | int): Stride of bboxes.
+        Returns:
+            torch.Tensor: Box transformation deltas
+        """
+
+        assert bboxes.shape[0] == gt_bboxes.shape[0]
+        assert bboxes.shape[-1] == gt_bboxes.shape[-1] == 4
+        x_center_gt = (gt_bboxes[..., 0] + gt_bboxes[..., 2]) * 0.5
+        y_center_gt = (gt_bboxes[..., 1] + gt_bboxes[..., 3]) * 0.5
+        w_gt = gt_bboxes[..., 2] - gt_bboxes[..., 0]
+        h_gt = gt_bboxes[..., 3] - gt_bboxes[..., 1]
+        x_center = (bboxes[..., 0] + bboxes[..., 2]) * 0.5
+        y_center = (bboxes[..., 1] + bboxes[..., 3]) * 0.5
+        w = bboxes[..., 2] - bboxes[..., 0]
+        h = bboxes[..., 3] - bboxes[..., 1]
+        w_target = np.log((w_gt / w).clip(min=self.eps))
+        h_target = np.log((h_gt / h).clip(min=self.eps))
+        x_center_target = ((x_center_gt - x_center) / stride + 0.5).clip(
+            self.eps, 1 - self.eps)
+        y_center_target = ((y_center_gt - y_center) / stride + 0.5).clip(
+            self.eps, 1 - self.eps)
+        reg_targets = np.stack(
+            [x_center_target, y_center_target, w_target, h_target], axis=-1)
+        return reg_targets
+
+    def __call__(self, samples, context=None):
+        assert len(self.anchor_masks) == len(self.downsample_ratios), \
+            "anchor_masks', and 'downsample_ratios' should have same length."
+        print('In Gt2YoloTarget1vN')
+        h, w = samples[0]['image'].shape[1:3]
+        an_hw = np.array(self.anchors) / np.array([[w, h]])
+        for sample in samples:
+            # im, gt_bbox, gt_class, gt_score = sample
+            im = sample['image']
+            gt_bbox = sample['gt_bbox']
+            gt_class = sample['gt_class']
+            gt_score = sample['gt_score']
+            base_anchors = YOLOAnchorGenerator(base_sizes=[[(116, 90), (156, 198), (373, 326)],
+                        [(30, 61), (62, 45), (59, 119)],
+                        [(10, 13), (16, 30), (33, 23)]], strides=self.downsample_ratios)
+            featmap_sizes = [(int(h/downsample_ratio), int(h/downsample_ratio)) for downsample_ratio in self.downsample_ratios]
+            anchor_list = base_anchors.grid_anchors(featmap_sizes)
+            for i, (
+                    mask, downsample_ratio
+            ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
+                grid_h = int(h / downsample_ratio)
+                grid_w = int(w / downsample_ratio)
+                target = np.zeros(
+                    (len(mask), 6 + self.num_classes, grid_h, grid_w),
+                    dtype=np.float32)
+                anchor_by_level = anchor_list[i]
+                gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
+                bboxes = gt_bbox_filted.copy()
+                bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
+                bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
+                bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
+                bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
+                assigner = Max_IoU_Assigner(anchors=anchor_by_level,
+                                            gts=bboxes,
+                                            pos_thr=0.5,
+                                            neg_thr=0.5,
+                                            ign_thr=0)
+                assigned_result = assigner.assign()
+                pos_idx = assigned_result>0
+                gt_bboxes = bboxes[assigned_result]
+                gt_labels = gt_class[assigned_result]
+                reg_target = self._get_reg_target(bboxes=anchor_by_level,gt_bboxes=gt_bboxes,stride=downsample_ratio)
+                target[:,0:4,...] = reg_target.reshape((len(mask),4,grid_w,grid_h))
+                obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
+                obj_target[pos_idx] = 1
+                target[:,4,...] = obj_target.reshape((len(mask),grid_w,grid_h))
+                target[:,5,...] = obj_target.reshape((len(mask),grid_w,grid_h))
+                label_target = np.eye(self.num_classes)[gt_labels]
+                shape = target[:,6:,...].shape
+                target[:,6:,...] = label_target.reshape(shape)
+                #assigned_result = assigned_result.reshape(len(mask),grid_w,grid_h)
+                #target_gt = gt_bbox_filted[assigned_result]
+            
+                sample['target{}'.format(i)] = target
+        return samples
 
 @register_op
 class Gt2FCOSTarget(BaseOperator):
@@ -590,3 +701,139 @@ class Gt2TTFTarget(BaseOperator):
             heatmap[y - top:y + bottom, x - left:x + right] = np.maximum(
                 masked_heatmap, masked_gaussian)
         return heatmap
+
+class YOLOAnchorGenerator(object):
+    
+    def __init__(self, strides, base_sizes):
+        self.strides = [(stride, stride) for stride in strides]
+        self.centers = [(stride[0] / 2., stride[1] / 2.)
+                        for stride in self.strides]
+        self.base_sizes = []
+        num_anchor_per_level = len(base_sizes[0])
+        for base_sizes_per_level in base_sizes:
+            assert num_anchor_per_level == len(base_sizes_per_level)
+            self.base_sizes.append(
+                [base_size for base_size in base_sizes_per_level])
+        self.base_anchors = self.gen_base_anchors()
+
+    @property
+    def num_levels(self):
+        return len(self.base_sizes)
+
+    def gen_base_anchors(self):
+        multi_level_base_anchors = []
+        for i, base_sizes_per_level in enumerate(self.base_sizes):
+            center = None
+            if self.centers is not None:
+                center = self.centers[i]
+            multi_level_base_anchors.append(
+                self.gen_single_level_base_anchors(base_sizes_per_level,
+                                                   center))
+        return multi_level_base_anchors
+
+    def gen_single_level_base_anchors(self, base_sizes_per_level, center=None):
+        x_center, y_center = center
+        base_anchors = []
+        for base_size in base_sizes_per_level:
+            w, h = base_size
+            # use float anchor and the anchor's center is aligned with the
+            # pixel center
+            base_anchor = np.array([
+                x_center - 0.5 * w, y_center - 0.5 * h, x_center + 0.5 * w,
+                y_center + 0.5 * h
+            ])
+            base_anchors.append(base_anchor)
+        base_anchors = np.stack(base_anchors, axis=0)
+
+        return base_anchors
+    
+    def _meshgrid(self, x, y, row_major=True):
+        xx = np.tile(x,len(y))
+        yy = y.reshape(-1,1).repeat(len(x),1).reshape(-1)
+        if row_major:
+            return xx, yy
+        else:
+            return yy, xx
+        
+    def grid_anchors(self, featmap_sizes):
+        assert self.num_levels == len(featmap_sizes)
+        multi_level_anchors = []
+        for i in range(self.num_levels):
+            anchors = self.single_level_grid_anchors(
+                self.base_anchors[i],
+                featmap_sizes[i],
+                self.strides[i])
+            multi_level_anchors.append(anchors)
+        return multi_level_anchors
+
+    def single_level_grid_anchors(self,
+                                  base_anchors,
+                                  featmap_size,
+                                  stride=(16, 16)):
+        feat_h, feat_w = featmap_size
+        # convert Tensor to int, so that we can covert to ONNX correctlly
+        feat_h = int(feat_h)
+        feat_w = int(feat_w)
+        shift_x = np.arange(0, feat_w) * stride[0]
+        shift_y = np.arange(0, feat_h) * stride[1]
+
+        shift_xx, shift_yy = self._meshgrid(shift_x, shift_y)
+        shifts = np.stack([shift_xx, shift_yy, shift_xx, shift_yy], axis=-1)
+        shifts = shifts.astype(base_anchors.dtype)
+        # first feat_w elements correspond to the first row of shifts
+        # add A anchors (1, A, 4) to K shifts (K, 1, 4) to get
+        # shifted anchors (K, A, 4), reshape to (K*A, 4)
+
+        all_anchors = base_anchors[None, :, :] + shifts[:, None, :]
+        all_anchors = all_anchors.reshape(-1, 4)
+        # first A rows correspond to A anchors of (0, 0) in feature map,
+        # then (0, 1), (0, 2), ...
+        return all_anchors
+
+class Max_IoU_Assigner(object):
+    def __init__(self,
+                 anchors,
+                 gts,
+                 pos_thr,
+                 neg_thr,
+                 ign_thr):
+        super(Max_IoU_Assigner, self).__init__()
+        self.anchors = anchors
+        self.gts = gts
+        self.pos_thr = pos_thr
+        self.neg_thr = neg_thr
+    
+    def assign(self):
+        num_anchors = self.anchors.shape[0]
+        assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
+        overlaps = self.overlap_matrix(self.gts, self.anchors)
+        max_overlaps = overlaps.max(axis=0)
+        argmax_overlaps = overlaps.argmax(axis=0)
+        # assign negatives
+        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = 0
+        # assign positives
+        pos_inds = max_overlaps >= self.pos_thr
+        assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
+        return assigned_gt_inds
+
+    def overlap_matrix(self, bbox, gt):
+        """
+        :param bbox: (n, 4)
+        :param gt: (m, 4)
+        :return: (n, m)
+        numpy 广播机制 从后向前对齐。 维度为1 的可以重复等价为任意维度
+        eg: (4,3,2)   (3,2)  (3,2)会扩充为(4,3,2)
+            (4,1,2)   (3,2) (4,1,2) 扩充为(4, 3, 2)  (3, 2)扩充为(4, 3,2) 扩充的方法为重复
+        广播会在numpy的函数 如sum, maximun等函数中进行
+        pytorch同理。
+        扩充维度的方法：
+        eg: a  a.shape: (3,2)  a[:, None, :] a.shape: (3, 1, 2) None 对应的维度相当于newaxis
+        """
+        lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
+        rb = np.minimum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
+        wh = np.maximum(rb - lt + 1, 0)                # inter_area (w, h)
+        inter_areas = wh[:, :, 0] * wh[:, :, 1]        # shape: (n, m)
+        box_areas = (bbox[:, 2] - bbox[:, 0] + 1) * (bbox[:, 3] - bbox[:, 1] + 1)
+        gt_areas = (gt[:, 2] - gt[:, 0] + 1) * (gt[:, 3] - gt[:, 1] + 1)
+        IoU = inter_areas / (box_areas[:, None] + gt_areas - inter_areas)
+        return IoU
