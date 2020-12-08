@@ -270,18 +270,6 @@ def jaccard_overlap(sample_bbox, object_bbox):
     return overlap
 
 def overlap_matrix(bbox, gt):
-    """
-    :param bbox: (n, 4)
-    :param gt: (m, 4)
-    :return: (n, m)
-    numpy 广播机制 从后向前对齐。 维度为1 的可以重复等价为任意维度
-    eg: (4,3,2)   (3,2)  (3,2)会扩充为(4,3,2)
-        (4,1,2)   (3,2) (4,1,2) 扩充为(4, 3, 2)  (3, 2)扩充为(4, 3,2) 扩充的方法为重复
-    广播会在numpy的函数 如sum, maximun等函数中进行
-    pytorch同理。
-    扩充维度的方法：
-    eg: a  a.shape: (3,2)  a[:, None, :] a.shape: (3, 1, 2) None 对应的维度相当于newaxis
-    """
     lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
     rb = np.minimum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
     wh = np.maximum(rb - lt + 1, 0)                # inter_area (w, h)
