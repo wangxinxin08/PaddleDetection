@@ -389,17 +389,20 @@ class Gt2YoloTarget_1vN(BaseOperator):
                                             ign_thr=0)
                 assigned_result = assigner.assign()
                 pos_idx = assigned_result>0
-                gt_bboxes = bboxes[assigned_result]
-                gt_labels = gt_class[assigned_result]
+                gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
+                gt_bboxes[pos_idx] = bboxes[assigned_result][pos_idx]
+                gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
+                gt_labels[pos_idx] = gt_class[assigned_result][pos_idx]
+                
                 reg_target = self._get_reg_target(bboxes=anchor_by_level,gt_bboxes=gt_bboxes,stride=downsample_ratio)
-                target[:,0:4,...] = reg_target.reshape((len(mask),4,grid_w,grid_h))
+                target[:,0:4,...] = reg_target.reshape((len(mask),grid_w,grid_h,4)).transpose(0,2,3,1)
                 obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
                 obj_target[pos_idx] = 1
                 target[:,4,...] = obj_target.reshape((len(mask),grid_w,grid_h))
                 target[:,5,...] = obj_target.reshape((len(mask),grid_w,grid_h))
                 label_target = np.eye(self.num_classes)[gt_labels]
-                shape = target[:,6:,...].shape
-                target[:,6:,...] = label_target.reshape(shape)
+                #shape = target[:,6:,...].shape
+                target[:,6:,...] = label_target.reshape((len(mask),grid_w,grid_h,80)).transpose(0,2,3,1)
                 #assigned_result = assigned_result.reshape(len(mask),grid_w,grid_h)
                 #target_gt = gt_bbox_filted[assigned_result]
             
@@ -809,7 +812,7 @@ class Max_IoU_Assigner(object):
         max_overlaps = overlaps.max(axis=0)
         argmax_overlaps = overlaps.argmax(axis=0)
         # assign negatives
-        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = 0
+        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = -1
         # assign positives
         pos_inds = max_overlaps >= self.pos_thr
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
