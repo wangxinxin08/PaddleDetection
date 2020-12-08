@@ -90,7 +90,11 @@ class BaseOperator(object):
 
 @register_op
 class DecodeImage(BaseOperator):
-    def __init__(self, to_rgb=True, with_mixup=False, with_cutmix=False):
+    def __init__(self,
+                 to_rgb=True,
+                 with_mixup=False,
+                 with_cutmix=False,
+                 with_mosaic=False):
         """ Transform the image data to numpy format.
         Args:
             to_rgb (bool): whether to convert BGR to RGB
@@ -102,6 +106,7 @@ class DecodeImage(BaseOperator):
         self.to_rgb = to_rgb
         self.with_mixup = with_mixup
         self.with_cutmix = with_cutmix
+        self.with_mosaic = with_mosaic
         if not isinstance(self.to_rgb, bool):
             raise TypeError("{}: input type is invalid.".format(self))
         if not isinstance(self.with_mixup, bool):
@@ -149,6 +154,11 @@ class DecodeImage(BaseOperator):
         # decode cutmix image
         if self.with_cutmix and 'cutmix' in sample:
             self.__call__(sample['cutmix'], context)
+
+        # decode mosaic image
+        if self.with_mosaic and 'mosaic' in sample:
+            for i, x in enumerate(sample['mosaic']):
+                self.__call__(x, context)
 
         # decode semantic label 
         if 'semantic' in sample.keys() and sample['semantic'] is not None:
@@ -370,6 +380,112 @@ class ResizeImage(BaseOperator):
             im = im.resize((int(resize_w), int(resize_h)), self.interp)
             im = np.array(im)
         sample['image'] = im
+        return sample
+
+
+@register_op
+class ResizeAndKeepRatio(BaseOperator):
+    def __init__(self, target_size, augment=False, with_mosaic=False):
+        super(ResizeAndKeepRatio, self).__init__()
+        self.target_size = target_size
+        self.augment = augment
+        self.with_mosaic = with_mosaic
+
+    def __call__(self, sample, context=None):
+        im = sample['image']
+        bbox = sample['gt_bbox']
+
+        h0, w0 = im.shape[:2]
+        r = self.target_size / max(h0, w0)
+        h1, w1 = int(h0 * r), int(w0 * r)
+        if r != 1:
+            interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
+            im = cv2.resize(im, (w1, h1), interpolation=interp)
+
+        bbox = bbox * (r, r, r, r)
+        bbox[:, [0, 2]] = bbox[:, [0, 2]].clip(0, w1 - 1)
+        bbox[:, [1, 3]] = bbox[:, [1, 3]].clip(0, h1 - 1)
+
+        sample['h'] = h1
+        sample['w'] = w1
+        sample['image'] = im
+        sample['im_size'] = [float(h0), float(w0)]
+        sample['im_scale'] = [1. / r, 1. / r]
+        sample['gt_bbox'] = bbox
+        if self.with_mosaic and 'mosaic' in sample:
+            for i, x in enumerate(sample['mosaic']):
+                self.__call__(x, context)
+
+        return sample
+
+
+@register_op
+class Mosaic(BaseOperator):
+    def __init__(self,
+                 target_size,
+                 mosaic_border=None,
+                 border_value=(114, 114, 114)):
+        super(Mosaic, self).__init__()
+        self.target_size = target_size
+        if mosaic_border is None:
+            mosaic_border = (-target_size // 2, -target_size // 2)
+        self.mosaic_border = mosaic_border
+        self.border_value = border_value
+
+    def __call__(self, sample, context=None):
+        if 'mosaic' not in sample:
+            return sample
+        s = self.target_size
+        ims, bboxes, labels, scores = [sample['image']], [sample['gt_bbox']], [
+            sample['gt_class']
+        ], [sample['gt_score']]
+        for x in sample['mosaic']:
+            ims.append(x['image'])
+            bboxes.append(x['gt_bbox'])
+            labels.append(x['gt_class'])
+            scores.append(x['gt_score'])
+        yc, xc = [
+            int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border
+        ]
+        new_im = np.ones(
+            (s * 2, s * 2, ims[0].shape[2]), dtype=np.uint8) * self.border_value
+        n = len(ims)
+        for i in range(n):
+            im = ims[i]
+            h, w, _ = im.shape
+            if i == 0:  # top left
+                # xmin, ymin, xmax, ymax (dst image)
+                x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc
+                # xmin, ymin, xmax, ymax (src image)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h
+            elif i == 1:  # top right
+                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+                x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
+            elif i == 2:  # bottom left
+                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, max(xc, w), min(
+                    y2a - y1a, h)
+            elif i == 3:  # bottom right
+                x1a, y1a, x2a, y2a = xc, yc, min(xc + w,
+                                                 s * 2), min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
+
+            new_im[y1a:y2a, x1a:x2a] = im[y1b:y2b, x1b:x2b]
+            padw = x1a - x1b
+            padh = y1a - y1b
+
+            bboxes[i] = bboxes[i] + (padw, padh, padw, padh)
+
+        new_bbox = np.vstack(bboxes)
+        new_bbox = new_bbox.clip(0, 2 * s - 1)
+        new_label = np.vstack(labels)
+        new_score = np.vstack(scores)
+        sample['h'] = s * 2
+        sample['w'] = s * 2
+        sample['image'] = new_im.astype(np.uint8)
+        sample['gt_bbox'] = new_bbox.astype(np.float32)
+        sample['gt_class'] = new_label.astype(np.int32)
+        sample['gt_score'] = new_score.astype(np.float32)
         return sample
 
 
@@ -1963,9 +2079,9 @@ class RandomCrop(BaseOperator):
                     sample['gt_score'] = np.take(
                         sample['gt_score'], valid_ids, axis=0)
 
-                if 'is_crowd' in sample:
-                    sample['is_crowd'] = np.take(
-                        sample['is_crowd'], valid_ids, axis=0)
+                # if 'is_crowd' in sample:
+                #     sample['is_crowd'] = np.take(
+                #         sample['is_crowd'], valid_ids, axis=0)
                 return sample
 
         return sample
@@ -2510,7 +2626,8 @@ class DebugVisibleImage(BaseOperator):
             raise TypeError("{}: input type is invalid.".format(self))
 
     def __call__(self, sample, context=None):
-        image = Image.open(sample['im_file']).convert('RGB')
+        # image = Image.open(sample['im_file']).convert('RGB')
+        image = Image.fromarray(sample['image'].astype('uint8'), 'RGB')
         out_file_name = sample['im_file'].split('/')[-1]
         width = sample['w']
         height = sample['h']

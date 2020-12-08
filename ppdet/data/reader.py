@@ -23,6 +23,7 @@ import collections
 import traceback
 import numpy as np
 import logging
+import random
 
 from ppdet.core.workspace import register, serializable
 
@@ -205,11 +206,14 @@ class Reader(object):
                  memsize='3G',
                  inputs_def=None,
                  devices_num=1,
-                 num_trainers=1):
+                 num_trainers=1,
+                 mosaic=False):
         self._dataset = dataset
         self._roidbs = self._dataset.get_roidb()
         self._fields = copy.deepcopy(inputs_def[
             'fields']) if inputs_def else None
+
+        self.mosaic = mosaic
 
         # transform
         self._sample_transforms = Compose(sample_transforms,
@@ -354,6 +358,17 @@ class Reader(object):
 
             if self._load_img:
                 sample['image'] = self._load_image(sample['im_file'])
+
+            if self.mosaic:
+                sample['mosaic'] = []
+                for idx in [
+                        random.randint(0, len(self.indexes) - 1)
+                        for _ in range(3)
+                ]:
+                    rec = copy.deepcopy(self._roidbs[idx])
+                    if self._load_img:
+                        rec['image'] = self._load_image(rec['im_file'])
+                    sample['mosaic'].append(rec)
 
             if self._epoch < self._mixup_epoch:
                 num = len(self.indexes)
