@@ -378,10 +378,14 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 anchor_by_level = anchor_list[i]
                 gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
                 bboxes = gt_bbox_filted.copy()
-                bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
-                bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
-                bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
-                bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
+                bboxes[:, 0] = (bboxes[:,0] - bboxes[:,2]/2) * w
+                bboxes[:, 1] = (bboxes[:,1] - bboxes[:,3]/2) * h
+                bboxes[:, 2] = (bboxes[:,2] + bboxes[:,2]/2) * w
+                bboxes[:, 3] = (bboxes[:,3] + bboxes[:,3]/2) * h
+                #bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
+                #bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
+                #bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
+                #bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
                 assigner = Max_IoU_Assigner(anchors=anchor_by_level,
                                             gts=bboxes,
                                             pos_thr=0.5,
