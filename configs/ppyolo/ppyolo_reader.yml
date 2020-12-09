@@ -5,7 +5,7 @@ TrainReader:
   dataset:
     !COCODataSet
       image_dir: train2017
-      anno_path: annotations/instances_train2017_rand8.json
+      anno_path: annotations/instances_train2017.json
       dataset_dir: dataset/coco
       with_background: false
   sample_transforms:
@@ -24,7 +24,7 @@ TrainReader:
     - !RandomCrop {}
     - !RandomFlipImage
       is_normalized: false
-    - !DebugVisibleImage {}
+    # - !DebugVisibleImage {}
     - !NormalizeBox {}
     - !PadBox
       num_max_boxes: 50
