@@ -293,6 +293,8 @@ class Gt2YoloTarget(BaseOperator):
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
                 sample['target{}'.format(i)] = target
+                # np.save('target{}.npy'.format(i), target)
+            # np.save('image.npy', sample['image'])
         return samples
 
 

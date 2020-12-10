@@ -192,6 +192,8 @@ class YOLOv3Loss(object):
                     ioup, x, y, w, h, tx, ty, tw, th, anchors, downsample,
                     self._train_batch_size, scale_x_y)
                 loss_iou_aware = loss_iou_aware * tobj
+                # fluid.layers.Print(loss_iou_aware)
+                # fluid.layers.Print(tobj)
                 loss_iou_aware = fluid.layers.reduce_sum(
                     loss_iou_aware, dim=[1, 2, 3])
                 loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))

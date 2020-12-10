@@ -156,6 +156,8 @@ class DecodeImage(BaseOperator):
             sem = cv2.imread(sem_file, cv2.IMREAD_GRAYSCALE)
             sample['semantic'] = sem.astype('int32')
 
+        # np.save('image.npy', sample['image'])
+
         return sample
 
 
@@ -1444,6 +1446,8 @@ class Resize(BaseOperator):
 
         sample['image'] = cv2.resize(
             sample['image'], (resize_w, resize_h), interpolation=interp)
+
+        # np.save('image.npy', sample['image'])
         return sample
 
 
@@ -2510,7 +2514,8 @@ class DebugVisibleImage(BaseOperator):
             raise TypeError("{}: input type is invalid.".format(self))
 
     def __call__(self, sample, context=None):
-        image = Image.open(sample['im_file']).convert('RGB')
+        # image = Image.open(sample['im_file']).convert('RGB')
+        image = Image.fromarray(sample['image'].astype('uint8'), 'RGB')
         out_file_name = sample['im_file'].split('/')[-1]
         width = sample['w']
         height = sample['h']

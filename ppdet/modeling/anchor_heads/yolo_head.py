@@ -87,6 +87,7 @@ class YOLOv3Head(object):
         self.nms = nms
         self.prefix_name = weight_prefix_name
         self.drop_block = drop_block
+        print('drop_block:', self.drop_block)
         self.iou_aware = iou_aware
         self.coord_conv = coord_conv
         self.iou_aware_factor = iou_aware_factor
@@ -233,6 +234,8 @@ class YOLOv3Head(object):
         conv = input
         for j in range(conv_block_num):
             conv = self._add_coord(conv, is_test=is_test)
+            # if j == 0:
+            #     fluid.layers.Print(conv)
             conv = self._conv_bn(
                 conv,
                 channel,
@@ -334,6 +337,7 @@ class YOLOv3Head(object):
 
         route = None
         for i, block in enumerate(blocks):
+            # fluid.layers.Print(block)
             if i > 0:  # perform concat in first 2 detection_block
                 block = fluid.layers.concat(input=[route, block], axis=1)
             route, tip = self._detection_block(
@@ -343,6 +347,8 @@ class YOLOv3Head(object):
                 is_test=(not is_train),
                 conv_block_num=self.conv_block_num,
                 name=self.prefix_name + "yolo_block.{}".format(i))
+            # fluid.layers.Print(route)
+            # fluid.layers.Print(tip)
 
             # out channel number = mask_num * (5 + class_num)
             if self.iou_aware:
@@ -364,6 +370,7 @@ class YOLOv3Head(object):
                         regularizer=L2Decay(0.),
                         name=self.prefix_name +
                         "yolo_output.{}.conv.bias".format(i)))
+                # fluid.layers.Print(block_out)
                 outputs.append(block_out)
 
             if i < len(blocks) - 1:

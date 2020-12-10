@@ -52,6 +52,8 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    # import paddle
+    # paddle.enable_static()
     env = os.environ
     FLAGS.dist = 'PADDLE_TRAINER_ID' in env \
                     and 'PADDLE_TRAINERS_NUM' in env \
@@ -194,7 +196,7 @@ def main():
     start_iter = 0
     if FLAGS.resume_checkpoint:
         checkpoint.load_checkpoint(exe, train_prog, FLAGS.resume_checkpoint)
-        start_iter = checkpoint.global_step()
+        # start_iter = checkpoint.global_step()
     elif cfg.pretrain_weights and fuse_bn and not ignore_params:
         checkpoint.load_and_fusebn(exe, train_prog, cfg.pretrain_weights)
     elif cfg.pretrain_weights:
@@ -227,6 +229,8 @@ def main():
     time_stat = deque(maxlen=cfg.log_smooth_window)
     best_box_ap_list = [0.0, 0]  #[map, iter]
 
+    # checkpoint.save(exe, train_prog, 'ppyolo_init')
+
     # use VisualDL to log data
     if FLAGS.use_vdl:
         assert six.PY3, "VisualDL requires Python >= 3.5"
@@ -242,8 +246,33 @@ def main():
         time_cost = np.mean(time_stat)
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
-        outs = exe.run(compiled_train_prog, fetch_list=train_values)
-        stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        # conv2d
+        # extra_keys = ['conv2d_7.tmp_1', 'conv2d_15.tmp_1', 'conv2d_23.tmp_1']
+        # res
+        # extra_keys = ['res3d.add.output.5.tmp_1', 'res4f.add.output.5.tmp_1', 'res5c.add.output.5.tmp_1']
+        # conv2
+        # extra_keys = ['leaky_relu_2.tmp_0', 'leaky_relu_10.tmp_0', 'leaky_relu_17.tmp_0']
+        # route
+        # extra_keys = ['leaky_relu_5.tmp_0', 'leaky_relu_12.tmp_0', 'leaky_relu_19.tmp_0']
+        # conv0
+        # extra_keys = ['leaky_relu_0.tmp_0', 'leaky_relu_8.tmp_0', 'leaky_relu_15.tmp_0']
+        # pre_conv0
+        extra_keys = ['concat_0.tmp_0', 'concat_6.tmp_0', 'concat_11.tmp_0']
+        nk = len(extra_keys)
+        outs = exe.run(compiled_train_prog,
+                       fetch_list=train_values + extra_keys)
+        stats = {
+            k: np.array(v).mean()
+            for k, v in zip(train_keys, outs[:-nk - 1])
+        }
+        res = {k: (np.array(v)) for k, v in zip(extra_keys, outs[-nk:])}
+        for i, k in enumerate(extra_keys):
+            # np.save('output.{}.npy'.format(i), res[k][0])
+            # np.save('res{}.npy'.format(nk - i - 1), res[k][0])
+            # np.save('route{}.npy'.format(i), res[k][0])
+            # np.save('conv2.{}.npy'.format(i), res[k][0])
+            # np.save('conv0.{}.npy'.format(i), res[k][0])
+            np.save('pre_conv0.{}.npy'.format(i), res[k][0])
 
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
@@ -256,7 +285,7 @@ def main():
         logs = train_stats.log()
         if it % cfg.log_iter == 0 and (not FLAGS.dist or trainer_id == 0):
             strs = 'iter: {}, lr: {:.6f}, {}, time: {:.3f}, eta: {}'.format(
-                it, np.mean(outs[-1]), logs, time_cost, eta)
+                it, np.mean(outs[-nk - 1]), logs, time_cost, eta)
             logger.info(strs)
 
         # NOTE : profiler tools, used for benchmark
