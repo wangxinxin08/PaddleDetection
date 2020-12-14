@@ -378,14 +378,14 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 anchor_by_level = anchor_list[i]
                 gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
                 bboxes = gt_bbox_filted.copy()
-                #bboxes[:, 0] = (bboxes[:,0] - bboxes[:,2]/2) * w
-                #bboxes[:, 1] = (bboxes[:,1] - bboxes[:,3]/2) * h
-                #bboxes[:, 2] = (bboxes[:,2] + bboxes[:,2]/2) * w
-                #bboxes[:, 3] = (bboxes[:,3] + bboxes[:,3]/2) * h
-                bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
-                bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
-                bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
-                bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
+                bboxes[:, 0] = (gt_bbox_filted[:,0] - gt_bbox_filted[:,2]/2) * w
+                bboxes[:, 1] = (gt_bbox_filted[:,1] - gt_bbox_filted[:,3]/2) * h
+                bboxes[:, 2] = (gt_bbox_filted[:,0] + gt_bbox_filted[:,2]/2) * w
+                bboxes[:, 3] = (gt_bbox_filted[:,1] + gt_bbox_filted[:,3]/2) * h
+                #bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
+                #bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
+                #bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
+                #bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
                 #assigner = Max_IoU_Assigner(anchors=anchor_by_level,
                                             #gts=bboxes,
                                             #pos_thr=0.5,
@@ -396,8 +396,10 @@ class Gt2YoloTarget_1vN(BaseOperator):
                                             k=1)
                 assigned_result = assigner.assign()
                 pos_idx = assigned_result>=0
-                print("positives:", pos_idx.sum())
-                print("gts:", bboxes.shape[0])
+                #print("$$$$$$$$$")
+                #print("stage:",i)
+                #print("positives:", pos_idx.sum())
+                #print("gts:", bboxes.shape[0])
                 #gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
                 gt_bboxes = bboxes[assigned_result]
                 #gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
@@ -852,8 +854,8 @@ class TopK_Assigner(object):
         self.k = k
     
     def assign(self):
-        print("#######################")
-        print("Topk_Assigner")
+        #print("#######################")
+        #print("Topk_Assigner")
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         overlaps = self.overlap_matrix(self.gts, self.anchors)
@@ -864,7 +866,7 @@ class TopK_Assigner(object):
         max_overlaps = new_overlaps.max(axis=0)
         argmax_overlaps = new_overlaps.argmax(axis=0)
         pos_inds = max_overlaps > 0.
-        print("iou:", max_overlaps[max_overlaps>0])
+        #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
         return assigned_gt_inds
     
