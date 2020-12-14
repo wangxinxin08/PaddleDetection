@@ -378,21 +378,26 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 anchor_by_level = anchor_list[i]
                 gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
                 bboxes = gt_bbox_filted.copy()
-                bboxes[:, 0] = (bboxes[:,0] - bboxes[:,2]/2) * w
-                bboxes[:, 1] = (bboxes[:,1] - bboxes[:,3]/2) * h
-                bboxes[:, 2] = (bboxes[:,2] + bboxes[:,2]/2) * w
-                bboxes[:, 3] = (bboxes[:,3] + bboxes[:,3]/2) * h
-                #bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
-                #bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
-                #bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
-                #bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
-                assigner = Max_IoU_Assigner(anchors=anchor_by_level,
+                #bboxes[:, 0] = (bboxes[:,0] - bboxes[:,2]/2) * w
+                #bboxes[:, 1] = (bboxes[:,1] - bboxes[:,3]/2) * h
+                #bboxes[:, 2] = (bboxes[:,2] + bboxes[:,2]/2) * w
+                #bboxes[:, 3] = (bboxes[:,3] + bboxes[:,3]/2) * h
+                bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
+                bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
+                bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
+                bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
+                #assigner = Max_IoU_Assigner(anchors=anchor_by_level,
+                                            #gts=bboxes,
+                                            #pos_thr=0.5,
+                                            #neg_thr=0.5,
+                                            #ign_thr=0)
+                assigner = TopK_Assigner(anchors=anchor_by_level,
                                             gts=bboxes,
-                                            pos_thr=0.5,
-                                            neg_thr=0.5,
-                                            ign_thr=0)
+                                            k=1)
                 assigned_result = assigner.assign()
                 pos_idx = assigned_result>=0
+                print("positives:", pos_idx.sum())
+                print("gts:", bboxes.shape[0])
                 #gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
                 gt_bboxes = bboxes[assigned_result]
                 #gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
@@ -815,6 +820,8 @@ class Max_IoU_Assigner(object):
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         overlaps = self.overlap_matrix(self.gts, self.anchors)
         max_overlaps = overlaps.max(axis=0)
+        #print("max_overlaps.shape:", max_overlaps.shape)
+        #print("assigned_gt_inds.shape:", assigned_gt_inds.shape)
         argmax_overlaps = overlaps.argmax(axis=0)
         # assign negatives
         assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = -1
@@ -838,24 +845,45 @@ class TopK_Assigner(object):
     def __init__(self,
                  anchors,
                  gts,
-                 topk):
-        super(Max_IoU_Assigner, self).__init__()
+                 k):
+        super(TopK_Assigner, self).__init__()
         self.anchors = anchors
         self.gts = gts
-        self.topk = topk
+        self.k = k
     
     def assign(self):
+        print("#######################")
+        print("Topk_Assigner")
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         overlaps = self.overlap_matrix(self.gts, self.anchors)
-        max_overlaps = overlaps.max(axis=0)
-        argmax_overlaps = overlaps.argmax(axis=0)
-        # assign negatives
-        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = -1
-        # assign positives
-        pos_inds = max_overlaps >= self.pos_thr
+        overlaps_mask = np.zeros(overlaps.shape, dtype=np.float32)
+        indices = np.argpartition(-overlaps, self.k, axis=1)[:, 0:self.k]
+        overlaps_mask[np.repeat(np.arange(overlaps.shape[0]), self.k), indices.ravel()] = 1
+        new_overlaps = overlaps * overlaps_mask
+        max_overlaps = new_overlaps.max(axis=0)
+        argmax_overlaps = new_overlaps.argmax(axis=0)
+        pos_inds = max_overlaps > 0.
+        print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
         return assigned_gt_inds
+    
+    def tpk(matrix, K, axis=1):
+        if axis == 0:
+            row_index = np.arange(matrix.shape[1 - axis])
+            topk_index = np.argpartition(-matrix, K, axis=axis)[0:K, :]
+            topk_data = matrix[topk_index, row_index]
+            topk_index_sort = np.argsort(-topk_data,axis=axis)
+            topk_data_sort = topk_data[topk_index_sort,row_index]
+            topk_index_sort = topk_index[0:K,:][topk_index_sort,row_index]
+        else:
+            column_index = np.arange(matrix.shape[1 - axis])[:, None]
+            topk_index = np.argpartition(-matrix, K, axis=axis)[:, 0:K]
+            topk_data = matrix[column_index, topk_index]
+            topk_index_sort = np.argsort(-topk_data, axis=axis)
+            topk_data_sort = topk_data[column_index, topk_index_sort]
+            topk_index_sort = topk_index[:,0:K][column_index,topk_index_sort]
+        return topk_data_sort, topk_index_sort
 
     def overlap_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
