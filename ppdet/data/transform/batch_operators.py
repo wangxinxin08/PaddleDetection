@@ -392,7 +392,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
                                             neg_thr=0.5,
                                             ign_thr=0)
                 assigned_result = assigner.assign()
-                pos_idx = assigned_result>0
+                pos_idx = assigned_result>=0
                 #gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
                 gt_bboxes = bboxes[assigned_result]
                 #gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
@@ -402,8 +402,8 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 target[:,0:4,...] = reg_target.reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,1,0)
                 obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
                 obj_target[pos_idx] = 1
-                target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
-                target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,1,0)
+                target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,1,0)
                 label_target = np.eye(self.num_classes)[gt_labels]
                 label_target[assigned_result<0] = 0
                 #shape = target[:,6:,...].shape
