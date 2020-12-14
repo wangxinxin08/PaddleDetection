@@ -830,5 +830,40 @@ class Max_IoU_Assigner(object):
         inter_areas = wh[:, :, 0] * wh[:, :, 1]        # shape: (n, m)
         box_areas = (bbox[:, 2] - bbox[:, 0] + 1) * (bbox[:, 3] - bbox[:, 1] + 1)
         gt_areas = (gt[:, 2] - gt[:, 0] + 1) * (gt[:, 3] - gt[:, 1] + 1)
-        IoU = inter_areas / (box_areas[:, None] + gt_areas - inter_areas)
+        unioun_areas = box_areas[:, None] + gt_areas - inter_areas
+        IoU = np.divide(inter_areas, unioun_areas, out=np.zeros_like(inter_areas), where=unioun_areas!=0) 
+        return IoU
+
+class TopK_Assigner(object):
+    def __init__(self,
+                 anchors,
+                 gts,
+                 topk):
+        super(Max_IoU_Assigner, self).__init__()
+        self.anchors = anchors
+        self.gts = gts
+        self.topk = topk
+    
+    def assign(self):
+        num_anchors = self.anchors.shape[0]
+        assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
+        overlaps = self.overlap_matrix(self.gts, self.anchors)
+        max_overlaps = overlaps.max(axis=0)
+        argmax_overlaps = overlaps.argmax(axis=0)
+        # assign negatives
+        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = -1
+        # assign positives
+        pos_inds = max_overlaps >= self.pos_thr
+        assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
+        return assigned_gt_inds
+
+    def overlap_matrix(self, bbox, gt):
+        lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
+        rb = np.minimum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
+        wh = np.maximum(rb - lt + 1, 0)                # inter_area (w, h)
+        inter_areas = wh[:, :, 0] * wh[:, :, 1]        # shape: (n, m)
+        box_areas = (bbox[:, 2] - bbox[:, 0] + 1) * (bbox[:, 3] - bbox[:, 1] + 1)
+        gt_areas = (gt[:, 2] - gt[:, 0] + 1) * (gt[:, 3] - gt[:, 1] + 1)
+        unioun_areas = box_areas[:, None] + gt_areas - inter_areas
+        IoU = np.divide(inter_areas, unioun_areas, out=np.zeros_like(inter_areas), where=unioun_areas!=0) 
         return IoU
