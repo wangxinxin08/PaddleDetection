@@ -402,14 +402,20 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 #print("gts:", bboxes.shape[0])
                 #gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
                 gt_bboxes = bboxes[assigned_result]
+                xywh_gts = gt_bbox_filted[assigned_result]
+                scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
                 #gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
                 gt_labels = gt_class[assigned_result]
-                
+                gt_scores = gt_score[assigned_result]
                 reg_target = self._get_reg_target(bboxes=anchor_by_level,gt_bboxes=gt_bboxes,stride=downsample_ratio)
                 target[:,0:4,...] = reg_target.reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
+                scales_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
+                scales_target[pos_idx] = scales[pos_idx]
                 obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
-                obj_target[pos_idx] = 1
-                target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                obj_target[pos_idx] = gt_scores[pos_idx]
+                #print('obj_target:', obj_target[obj_target>0])
+                #target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,4,...] = scales_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 label_target = np.eye(self.num_classes)[gt_labels]
                 label_target[assigned_result<0] = 0
