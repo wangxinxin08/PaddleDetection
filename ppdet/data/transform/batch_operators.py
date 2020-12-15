@@ -36,6 +36,7 @@ __all__ = [
     'PadMultiScaleTest',
     'Gt2YoloTarget',
     'Gt2YoloTarget_1vN',
+    'Gt2YoloTarget_topk',
     'Gt2FCOSTarget',
     'Gt2TTFTarget',
 ]
@@ -424,6 +425,125 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 #assigned_result = assigned_result.reshape(len(mask),grid_w,grid_h)
                 #target_gt = gt_bbox_filted[assigned_result]
             
+                sample['target{}'.format(i)] = target
+        return samples
+
+@register_op
+class Gt2YoloTarget_topk(BaseOperator):
+    """
+    Generate YOLOv3 targets by groud truth data, this operator is only used in
+    fine grained YOLOv3 loss mode
+    """
+    def __init__(self,
+                 anchors,
+                 anchor_masks,
+                 downsample_ratios,
+                 num_classes=80,
+                 iou_thresh=1.,
+                 eps=0.000001):
+        super(Gt2YoloTarget_topk, self).__init__()
+        self.anchors = anchors
+        self.anchor_masks = anchor_masks
+        self.downsample_ratios = downsample_ratios
+        self.num_classes = num_classes
+        self.iou_thresh = iou_thresh
+        self.eps = eps
+        
+    def _get_reg_target(self, bboxes, gt_bboxes, stride):
+        """Get box regression transformation deltas that can be used to
+        transform the ``bboxes`` into the ``gt_bboxes``.
+        Args:
+            bboxes (torch.Tensor): Source boxes, e.g., anchors.
+            gt_bboxes (torch.Tensor): Target of the transformation, e.g.,
+                ground-truth boxes.
+            stride (torch.Tensor | int): Stride of bboxes.
+        Returns:
+            torch.Tensor: Box transformation deltas
+        """
+
+        assert bboxes.shape[0] == gt_bboxes.shape[0]
+        assert bboxes.shape[-1] == gt_bboxes.shape[-1] == 4
+        x_center_gt = (gt_bboxes[..., 0] + gt_bboxes[..., 2]) * 0.5
+        y_center_gt = (gt_bboxes[..., 1] + gt_bboxes[..., 3]) * 0.5
+        w_gt = gt_bboxes[..., 2] - gt_bboxes[..., 0]
+        h_gt = gt_bboxes[..., 3] - gt_bboxes[..., 1]
+        x_center = (bboxes[..., 0] + bboxes[..., 2]) * 0.5
+        y_center = (bboxes[..., 1] + bboxes[..., 3]) * 0.5
+        w = bboxes[..., 2] - bboxes[..., 0]
+        h = bboxes[..., 3] - bboxes[..., 1]
+        w_target = np.log((w_gt / w).clip(min=self.eps))
+        h_target = np.log((h_gt / h).clip(min=self.eps))
+        x_center_target = ((x_center_gt - x_center) / stride + 0.5).clip(
+            self.eps, 1 - self.eps)
+        y_center_target = ((y_center_gt - y_center) / stride + 0.5).clip(
+            self.eps, 1 - self.eps)
+        reg_targets = np.stack(
+            [x_center_target, y_center_target, w_target, h_target], axis=-1)
+        return reg_targets
+
+    def __call__(self, samples, context=None):
+        assert len(self.anchor_masks) == len(self.downsample_ratios), \
+            "anchor_masks', and 'downsample_ratios' should have same length."
+        h, w = samples[0]['image'].shape[1:3]
+        an_hw = np.array(self.anchors) / np.array([[w, h]])
+        for sample in samples:
+            # im, gt_bbox, gt_class, gt_score = sample
+            im = sample['image']
+            gt_bbox = sample['gt_bbox']
+            gt_class = sample['gt_class']
+            gt_score = sample['gt_score']
+            base_anchors = YOLOAnchorGenerator(base_sizes=[[(116, 90), (156, 198), (373, 326)],
+                        [(30, 61), (62, 45), (59, 119)],
+                        [(10, 13), (16, 30), (33, 23)]], strides=self.downsample_ratios)
+            featmap_sizes = [(int(h/downsample_ratio), int(h/downsample_ratio)) for downsample_ratio in self.downsample_ratios]
+            anchor_list = base_anchors.grid_anchors(featmap_sizes)
+            anchors = np.concatenate((anchor_list[0],anchor_list[1],anchor_list[2]))
+            length = [anchor_list[i].shape[0] for i in range(3)]
+            gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
+            bboxes = gt_bbox_filted.copy()
+            bboxes[:, 0] = (gt_bbox_filted[:,0] - gt_bbox_filted[:,2]/2) * w
+            bboxes[:, 1] = (gt_bbox_filted[:,1] - gt_bbox_filted[:,3]/2) * h
+            bboxes[:, 2] = (gt_bbox_filted[:,0] + gt_bbox_filted[:,2]/2) * w
+            bboxes[:, 3] = (gt_bbox_filted[:,1] + gt_bbox_filted[:,3]/2) * h
+            assigner = TopK_Assigner(anchors=anchors,
+                                        gts=bboxes,
+                                        k=1)
+            assigned_result = assigner.assign()
+            pos_idx = assigned_result>=0
+            gt_bboxes = bboxes[assigned_result]
+            target_boxes = [gt_bboxes[0:length[0]],gt_bboxes[length[0]:length[0]+length[1]],gt_bboxes[length[0]+length[1]:]]
+            xywh_gts = gt_bbox_filted[assigned_result]
+            scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
+            gt_labels = gt_class[assigned_result]
+            gt_scores = gt_score[assigned_result]
+            reg_target = [self._get_reg_target(bboxes=anchor_list[i],gt_bboxes=target_boxes[i],stride=self.downsample_ratios[i]) for i in range(3)]
+            scales_target = np.zeros((anchors.shape[0]),dtype=np.float32)
+            scales_target[pos_idx] = scales[pos_idx]
+            obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
+            obj_target[pos_idx] = gt_scores[pos_idx]
+            label_target = np.eye(self.num_classes)[gt_labels]
+            label_target[assigned_result<0] = 0
+            for i, (
+                    mask, downsample_ratio
+            ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
+                grid_h = int(h / downsample_ratio)
+                grid_w = int(w / downsample_ratio)
+                target = np.zeros(
+                    (len(mask), 6 + self.num_classes, grid_h, grid_w),
+                    dtype=np.float32)
+                if i==0:
+                    start = 0
+                    end = grid_h * grid_w * 3
+                elif i==1:
+                    start = grid_h * grid_w * 4 * 3 
+                    end = grid_h * grid_w * 5 * 3
+                else:
+                    start = - grid_h * grid_w * 3
+                    end = anchors.shape[0]
+                target[:,0:4,...] = reg_target[i].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
+                target[:,4,...] = scales_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,5,...] = obj_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
                 sample['target{}'.format(i)] = target
         return samples
 
@@ -871,7 +991,7 @@ class TopK_Assigner(object):
         new_overlaps = overlaps * overlaps_mask
         max_overlaps = new_overlaps.max(axis=0)
         argmax_overlaps = new_overlaps.argmax(axis=0)
-        pos_inds = max_overlaps >= 0.35
+        pos_inds = max_overlaps > 0.
         #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
         return assigned_gt_inds
