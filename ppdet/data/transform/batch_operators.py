@@ -406,15 +406,15 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 gt_labels = gt_class[assigned_result]
                 
                 reg_target = self._get_reg_target(bboxes=anchor_by_level,gt_bboxes=gt_bboxes,stride=downsample_ratio)
-                target[:,0:4,...] = reg_target.reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,1,0)
+                target[:,0:4,...] = reg_target.reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
                 obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
                 obj_target[pos_idx] = 1
-                target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,1,0)
-                target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,1,0)
+                target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 label_target = np.eye(self.num_classes)[gt_labels]
                 label_target[assigned_result<0] = 0
                 #shape = target[:,6:,...].shape
-                target[:,6:,...] = label_target.reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,1,0)
+                target[:,6:,...] = label_target.reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
                 #assigned_result = assigned_result.reshape(len(mask),grid_w,grid_h)
                 #target_gt = gt_bbox_filted[assigned_result]
             
@@ -865,7 +865,7 @@ class TopK_Assigner(object):
         new_overlaps = overlaps * overlaps_mask
         max_overlaps = new_overlaps.max(axis=0)
         argmax_overlaps = new_overlaps.argmax(axis=0)
-        pos_inds = max_overlaps > 0.
+        pos_inds = max_overlaps >= 0.35
         #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
         return assigned_gt_inds
