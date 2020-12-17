@@ -294,7 +294,7 @@ class Gt2YoloTarget(BaseOperator):
 
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
-                np.save('correct_target{}'.format(i), target)
+                #np.save('c_target{}'.format(i), target)
                 sample['target{}'.format(i)] = target
         assert len(self.anchor_masks) != len(self.downsample_ratios), \
             "end assigner"       
@@ -515,11 +515,15 @@ class Gt2YoloTarget_topk(BaseOperator):
                                         k=1)
             assigned_result = assigner.assign()
             pos_idx = assigned_result>=0
+            #print("$$$$$$$$, out side the assigner, $$$$$$$$$")
+            #print("pos_idx:",np.argwhere(assigned_result>=0))
             gt_bboxes = bboxes[assigned_result]
             target_boxes = [gt_bboxes[0:length[0]],gt_bboxes[length[0]:length[0]+length[1]],gt_bboxes[length[0]+length[1]:]]
             xywh_gts = gt_bbox_filted[assigned_result]
             scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
             #print('scales:', scales)
+            gt_class = gt_class[:len(gt_bbox_filted)]
+            gt_score = gt_score[:len(gt_bbox_filted)]
             gt_labels = gt_class[assigned_result]
             gt_scores = gt_score[assigned_result]
             reg_target = np.concatenate([self._get_reg_target(bboxes=anchor_list[i],gt_bboxes=target_boxes[i],stride=self.downsample_ratios[i]) for i in range(3)])
@@ -529,6 +533,7 @@ class Gt2YoloTarget_topk(BaseOperator):
             scales_target[pos_idx] = scales[pos_idx]
             obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
             obj_target[pos_idx] = gt_scores[pos_idx]
+            #print("obj_target:",obj_target[pos_idx].sum())
             label_target = np.eye(self.num_classes)[gt_labels]
             label_target[assigned_result<0] = 0
             for i, (
@@ -543,15 +548,20 @@ class Gt2YoloTarget_topk(BaseOperator):
                     start = 0
                     end = grid_h * grid_w * 3
                 elif i==1:
-                    start = grid_h * grid_w * 4 * 3 
-                    end = grid_h * grid_w * 5 * 3
+                    start = int(grid_h * grid_w * 3 / 4) 
+                    end = int(grid_h * grid_w * 5 * 3 / 4)
                 else:
                     start = - grid_h * grid_w * 3
                     end = anchors.shape[0]
                 target[:,0:4,...] = reg_target[start:end].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
                 target[:,4,...] = scales_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 target[:,5,...] = obj_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                #print("=========")
+                #print("i:", i)
+                #print("grid_h:",grid_h)
+                #print("target[:,5,...]:", target[:,5,...].sum())
                 target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
+                #np.save('my_t{}'.format(i), target)
                 sample['target{}'.format(i)] = target
         return samples
 
@@ -1002,6 +1012,20 @@ class TopK_Assigner(object):
         pos_inds = max_overlaps > 0.
         #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
+
+        reversed_mask = 1 - overlaps_mask
+        filtered_overlaps = overlaps * reversed_mask
+        gt_idx = np.arange(overlaps.shape[0])
+        #print("pos_inds:", pos_inds.sum())
+        gt_idx[argmax_overlaps[pos_inds]] = -1
+        #print("gt_idx:", gt_idx)
+        gt_max_overlaps = filtered_overlaps.max(axis=1)
+        gt_argmax_overlaps = filtered_overlaps.argmax(axis=1)
+        for i in range(self.gts.shape[0]):
+            if gt_idx[i] != -1:
+                max_iou_inds = filtered_overlaps[i, :] == gt_max_overlaps[i]
+                assigned_gt_inds[max_iou_inds] = i
+        #print('assigned_gt_inds>=0', (assigned_gt_inds>=0).sum())
         return assigned_gt_inds
     
     def tpk(matrix, K, axis=1):
