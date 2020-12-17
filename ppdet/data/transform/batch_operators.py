@@ -294,7 +294,10 @@ class Gt2YoloTarget(BaseOperator):
 
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
+                np.save('correct_target{}'.format(i), target)
                 sample['target{}'.format(i)] = target
+        assert len(self.anchor_masks) != len(self.downsample_ratios), \
+            "end assigner"       
         return samples
 
 @register_op
@@ -501,6 +504,8 @@ class Gt2YoloTarget_topk(BaseOperator):
             length = [anchor_list[i].shape[0] for i in range(3)]
             gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
             bboxes = gt_bbox_filted.copy()
+            gt_class = gt_class[:len(gt_bbox_filted)]
+            gt_score = gt_score[:len(gt_bbox_filted)]
             bboxes[:, 0] = (gt_bbox_filted[:,0] - gt_bbox_filted[:,2]/2) * w
             bboxes[:, 1] = (gt_bbox_filted[:,1] - gt_bbox_filted[:,3]/2) * h
             bboxes[:, 2] = (gt_bbox_filted[:,0] + gt_bbox_filted[:,2]/2) * w
@@ -514,9 +519,12 @@ class Gt2YoloTarget_topk(BaseOperator):
             target_boxes = [gt_bboxes[0:length[0]],gt_bboxes[length[0]:length[0]+length[1]],gt_bboxes[length[0]+length[1]:]]
             xywh_gts = gt_bbox_filted[assigned_result]
             scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
+            #print('scales:', scales)
             gt_labels = gt_class[assigned_result]
             gt_scores = gt_score[assigned_result]
-            reg_target = [self._get_reg_target(bboxes=anchor_list[i],gt_bboxes=target_boxes[i],stride=self.downsample_ratios[i]) for i in range(3)]
+            reg_target = np.concatenate([self._get_reg_target(bboxes=anchor_list[i],gt_bboxes=target_boxes[i],stride=self.downsample_ratios[i]) for i in range(3)])
+            reg_target[assigned_result<0] = 0
+            #print('reg_target.shape:', reg_target[0].shape)
             scales_target = np.zeros((anchors.shape[0]),dtype=np.float32)
             scales_target[pos_idx] = scales[pos_idx]
             obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
@@ -540,7 +548,7 @@ class Gt2YoloTarget_topk(BaseOperator):
                 else:
                     start = - grid_h * grid_w * 3
                     end = anchors.shape[0]
-                target[:,0:4,...] = reg_target[i].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
+                target[:,0:4,...] = reg_target[start:end].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
                 target[:,4,...] = scales_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 target[:,5,...] = obj_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
