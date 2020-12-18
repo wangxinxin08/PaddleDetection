@@ -561,7 +561,7 @@ class Gt2YoloTarget_topk(BaseOperator):
                 #print("grid_h:",grid_h)
                 #print("target[:,5,...]:", target[:,5,...].sum())
                 target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
-                #np.save('my_t{}'.format(i), target)
+                np.save('my_t{}'.format(i), target)
                 sample['target{}'.format(i)] = target
         return samples
 
@@ -1012,38 +1012,16 @@ class TopK_Assigner(object):
         pos_inds = max_overlaps > 0.
         #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
-
-        reversed_mask = 1 - overlaps_mask
-        filtered_overlaps = overlaps * reversed_mask
+        filtered_overlaps = overlaps.copy()
+        filtered_overlaps[:,pos_inds] = 0
         gt_idx = np.arange(overlaps.shape[0])
-        #print("pos_inds:", pos_inds.sum())
         gt_idx[argmax_overlaps[pos_inds]] = -1
-        #print("gt_idx:", gt_idx)
         gt_max_overlaps = filtered_overlaps.max(axis=1)
-        gt_argmax_overlaps = filtered_overlaps.argmax(axis=1)
         for i in range(self.gts.shape[0]):
             if gt_idx[i] != -1:
                 max_iou_inds = filtered_overlaps[i, :] == gt_max_overlaps[i]
                 assigned_gt_inds[max_iou_inds] = i
-        #print('assigned_gt_inds>=0', (assigned_gt_inds>=0).sum())
         return assigned_gt_inds
-    
-    def tpk(matrix, K, axis=1):
-        if axis == 0:
-            row_index = np.arange(matrix.shape[1 - axis])
-            topk_index = np.argpartition(-matrix, K, axis=axis)[0:K, :]
-            topk_data = matrix[topk_index, row_index]
-            topk_index_sort = np.argsort(-topk_data,axis=axis)
-            topk_data_sort = topk_data[topk_index_sort,row_index]
-            topk_index_sort = topk_index[0:K,:][topk_index_sort,row_index]
-        else:
-            column_index = np.arange(matrix.shape[1 - axis])[:, None]
-            topk_index = np.argpartition(-matrix, K, axis=axis)[:, 0:K]
-            topk_data = matrix[column_index, topk_index]
-            topk_index_sort = np.argsort(-topk_data, axis=axis)
-            topk_data_sort = topk_data[column_index, topk_index_sort]
-            topk_index_sort = topk_index[:,0:K][column_index,topk_index_sort]
-        return topk_data_sort, topk_index_sort
 
     def overlap_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
