@@ -176,6 +176,7 @@ class YOLOv3Loss(object):
                 loss_y = fluid.layers.reduce_sum(loss_y, dim=[1, 2, 3])
 
             # NOTE: we refined loss function of (w, h) as L1Loss
+            #fluid.layers.Print(gt_box)
             loss_w = fluid.layers.abs(w - tw) * tscale_tobj
             loss_w = fluid.layers.reduce_sum(loss_w, dim=[1, 2, 3])
             loss_h = fluid.layers.abs(h - th) * tscale_tobj
@@ -200,7 +201,12 @@ class YOLOv3Loss(object):
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
 
-            loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+            #loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+            tcls = fluid.layers.argmax(x=tcls, axis=4)
+            tcls = fluid.layers.cast(tcls, dtype="int32")
+            tcls = fluid.layers.unsqueeze(tcls, axes=[4])
+            fg_num = fluid.layers.reduce_sum(tcls)
+            loss_cls = fluid.layers.sigmoid_focal_loss(cls, tcls, fg_num)
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
             loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
