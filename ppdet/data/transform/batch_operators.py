@@ -301,7 +301,7 @@ class Gt2YoloTarget(BaseOperator):
         return samples
 
 @register_op
-class Gt2YoloTarget_1vN(BaseOperator):
+class Gt2YoloTarget_IoU(BaseOperator):
     """
     Generate YOLOv3 targets by groud truth data, this operator is only used in
     fine grained YOLOv3 loss mode
@@ -314,7 +314,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
                  num_classes=80,
                  iou_thresh=1.,
                  eps=0.000001):
-        super(Gt2YoloTarget_1vN, self).__init__()
+        super(Gt2YoloTarget_IoU, self).__init__()
         self.anchors = anchors
         self.anchor_masks = anchor_masks
         self.downsample_ratios = downsample_ratios
@@ -371,6 +371,44 @@ class Gt2YoloTarget_1vN(BaseOperator):
                         [(10, 13), (16, 30), (33, 23)]], strides=self.downsample_ratios)
             featmap_sizes = [(int(h/downsample_ratio), int(h/downsample_ratio)) for downsample_ratio in self.downsample_ratios]
             anchor_list = base_anchors.grid_anchors(featmap_sizes)
+            anchors = np.concatenate((anchor_list[0],anchor_list[1],anchor_list[2]))
+            length = [anchor_list[i].shape[0] for i in range(3)]
+            gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
+            bboxes = gt_bbox_filted.copy()
+            gt_class = gt_class[:len(gt_bbox_filted)]
+            gt_score = gt_score[:len(gt_bbox_filted)]
+            bboxes[:, 0] = (gt_bbox_filted[:,0] - gt_bbox_filted[:,2]/2) * w
+            bboxes[:, 1] = (gt_bbox_filted[:,1] - gt_bbox_filted[:,3]/2) * h
+            bboxes[:, 2] = (gt_bbox_filted[:,0] + gt_bbox_filted[:,2]/2) * w
+            bboxes[:, 3] = (gt_bbox_filted[:,1] + gt_bbox_filted[:,3]/2) * h
+            #assigner = TopK_Assigner(anchors=anchors,
+                                        #gts=bboxes,
+                                        #k=1)
+            assigner = Max_IoU_Assigner(anchors=anchors,
+                                            gts=bboxes,
+                                            pos_thr=0.5,
+                                            neg_thr=0.5)
+            assigned_result = assigner.assign()
+            pos_idx = assigned_result>=0
+            gt_bboxes = bboxes[assigned_result]
+            target_boxes = [gt_bboxes[0:length[0]],gt_bboxes[length[0]:length[0]+length[1]],gt_bboxes[length[0]+length[1]:]]
+            xywh_gts = gt_bbox_filted[assigned_result]
+            scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
+            #print('scales:', scales)
+            gt_class = gt_class[:len(gt_bbox_filted)]
+            gt_score = gt_score[:len(gt_bbox_filted)]
+            gt_labels = gt_class[assigned_result]
+            gt_scores = gt_score[assigned_result]
+            reg_target = np.concatenate([self._get_reg_target(bboxes=anchor_list[i],gt_bboxes=target_boxes[i],stride=self.downsample_ratios[i]) for i in range(3)])
+            reg_target[assigned_result<0] = 0
+            #print('reg_target.shape:', reg_target[0].shape)
+            scales_target = np.zeros((anchors.shape[0]),dtype=np.float32)
+            scales_target[pos_idx] = scales[pos_idx]
+            obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
+            obj_target[pos_idx] = gt_scores[pos_idx]
+            #print("obj_target:",obj_target[pos_idx].sum())
+            label_target = np.eye(self.num_classes)[gt_labels]
+            label_target[assigned_result<0] = 0
             for i, (
                     mask, downsample_ratio
             ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
@@ -379,55 +417,19 @@ class Gt2YoloTarget_1vN(BaseOperator):
                 target = np.zeros(
                     (len(mask), 6 + self.num_classes, grid_h, grid_w),
                     dtype=np.float32)
-                anchor_by_level = anchor_list[i]
-                gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
-                bboxes = gt_bbox_filted.copy()
-                bboxes[:, 0] = (gt_bbox_filted[:,0] - gt_bbox_filted[:,2]/2) * w
-                bboxes[:, 1] = (gt_bbox_filted[:,1] - gt_bbox_filted[:,3]/2) * h
-                bboxes[:, 2] = (gt_bbox_filted[:,0] + gt_bbox_filted[:,2]/2) * w
-                bboxes[:, 3] = (gt_bbox_filted[:,1] + gt_bbox_filted[:,3]/2) * h
-                #bboxes[:, [0, 2]] = bboxes[:, [0, 2]] * w
-                #bboxes[:, [1, 3]] = bboxes[:, [1, 3]] * h
-                #bboxes[:, 2] = bboxes[:, 0] + bboxes[:, 2]
-                #bboxes[:, 3] = bboxes[:, 1] + bboxes[:, 3]
-                #assigner = Max_IoU_Assigner(anchors=anchor_by_level,
-                                            #gts=bboxes,
-                                            #pos_thr=0.5,
-                                            #neg_thr=0.5,
-                                            #ign_thr=0)
-                assigner = TopK_Assigner(anchors=anchor_by_level,
-                                            gts=bboxes,
-                                            k=1)
-                assigned_result = assigner.assign()
-                pos_idx = assigned_result>=0
-                #print("$$$$$$$$$")
-                #print("stage:",i)
-                #print("positives:", pos_idx.sum())
-                #print("gts:", bboxes.shape[0])
-                #gt_bboxes = np.zeros((anchor_by_level.shape[0],4),dtype=np.float32)
-                gt_bboxes = bboxes[assigned_result]
-                xywh_gts = gt_bbox_filted[assigned_result]
-                scales = 2.0 - xywh_gts[:,2] * xywh_gts[:,3]
-                #gt_labels = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
-                gt_labels = gt_class[assigned_result]
-                gt_scores = gt_score[assigned_result]
-                reg_target = self._get_reg_target(bboxes=anchor_by_level,gt_bboxes=gt_bboxes,stride=downsample_ratio)
-                target[:,0:4,...] = reg_target.reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
-                scales_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
-                scales_target[pos_idx] = scales[pos_idx]
-                obj_target = np.zeros((anchor_by_level.shape[0]),dtype=np.float32)
-                obj_target[pos_idx] = gt_scores[pos_idx]
-                #print('obj_target:', obj_target[obj_target>0])
-                #target[:,4,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
-                target[:,4,...] = scales_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
-                target[:,5,...] = obj_target.reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
-                label_target = np.eye(self.num_classes)[gt_labels]
-                label_target[assigned_result<0] = 0
-                #shape = target[:,6:,...].shape
-                target[:,6:,...] = label_target.reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
-                #assigned_result = assigned_result.reshape(len(mask),grid_w,grid_h)
-                #target_gt = gt_bbox_filted[assigned_result]
-            
+                if i==0:
+                    start = 0
+                    end = grid_h * grid_w * 3
+                elif i==1:
+                    start = int(grid_h * grid_w * 3 / 4) 
+                    end = int(grid_h * grid_w * 5 * 3 / 4)
+                else:
+                    start = - grid_h * grid_w * 3
+                    end = anchors.shape[0]
+                target[:,0:4,...] = reg_target[start:end].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
+                target[:,4,...] = scales_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,5,...] = obj_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
+                target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
                 sample['target{}'.format(i)] = target
         return samples
 
@@ -513,6 +515,10 @@ class Gt2YoloTarget_topk(BaseOperator):
             assigner = TopK_Assigner(anchors=anchors,
                                         gts=bboxes,
                                         k=1)
+            #assigner = Max_IoU_Assigner(anchors=anchors,
+                                            #gts=bboxes,
+                                            #pos_thr=0.5,
+                                            #neg_thr=0.5)
             assigned_result = assigner.assign()
             pos_idx = assigned_result>=0
             #print("$$$$$$$$, out side the assigner, $$$$$$$$$")
@@ -953,8 +959,7 @@ class Max_IoU_Assigner(object):
                  anchors,
                  gts,
                  pos_thr,
-                 neg_thr,
-                 ign_thr):
+                 neg_thr):
         super(Max_IoU_Assigner, self).__init__()
         self.anchors = anchors
         self.gts = gts
