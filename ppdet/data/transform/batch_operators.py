@@ -301,7 +301,7 @@ class Gt2YoloTarget(BaseOperator):
         return samples
 
 @register_op
-class Gt2YoloTarget_IoU(BaseOperator):
+class Gt2YoloTarget_1vN(BaseOperator):
     """
     Generate YOLOv3 targets by groud truth data, this operator is only used in
     fine grained YOLOv3 loss mode
@@ -314,7 +314,7 @@ class Gt2YoloTarget_IoU(BaseOperator):
                  num_classes=80,
                  iou_thresh=1.,
                  eps=0.000001):
-        super(Gt2YoloTarget_IoU, self).__init__()
+        super(Gt2YoloTarget_1vN, self).__init__()
         self.anchors = anchors
         self.anchor_masks = anchor_masks
         self.downsample_ratios = downsample_ratios
