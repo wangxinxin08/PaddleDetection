@@ -44,7 +44,7 @@ from .op_helper import (satisfy_sample_constraint, filter_and_process,
                         generate_sample_bbox, clip_bbox, data_anchor_sampling,
                         satisfy_sample_constraint_coverage, crop_image_sampling,
                         generate_sample_bbox_square, bbox_area_sampling,
-                        is_poly, gaussian_radius, draw_gaussian)
+                        is_poly, gaussian_radius, draw_gaussian, transform_bbox)
 
 logger = logging.getLogger(__name__)
 
@@ -486,6 +486,140 @@ class Mosaic(BaseOperator):
         sample['gt_bbox'] = new_bbox.astype(np.float32)
         sample['gt_class'] = new_label.astype(np.int32)
         sample['gt_score'] = new_score.astype(np.float32)
+        return sample
+
+
+@register_op
+class RandomPerspective(BaseOperator):
+    """Rotate, tranlate, scale, shear and perspect image and bboxes randomly
+    Args:
+        degree (int): rotation degree, uniformly sampled in [-degree, degree]
+        translate (float): translate fraction, translate_x and translate_y are uniformly sampled 
+            in [0.5 - translate, 0.5 + translate]
+        scale (float): scale factor, uniformly sampled in [1 - scale, 1 + scale]
+        shear (int): shear degree, shear_x and shear_y are uniformly sampled in [-shear, shear]
+        perspective (float): perspective_x and perspective_y are uniformly sampled in [-perspective, perspective]
+        area_thr (float): the area threshold of bbox to be kept after transformation, default 0.25
+        border_value (tuple): value used in case of a constant border, default (114, 114, 114)
+    """
+
+    def __init__(self,
+                 degree=10,
+                 translate=0.1,
+                 scale=0.1,
+                 shear=10,
+                 perspective=0.0,
+                 border=(0, 0),
+                 area_thr=0.25,
+                 border_value=(114, 114, 114)):
+        super(RandomPerspective, self).__init__()
+        self.degree = degree
+        self.translate = translate
+        self.scale = scale
+        self.shear = shear
+        self.perspective = perspective
+        self.border = border
+        self.area_thr = area_thr
+        self.border_value = border_value
+
+    def __call__(self, sample, context=None):
+        im = sample['image']
+        bbox = sample['gt_bbox']
+        label = sample['gt_class']
+        score = sample['gt_score']
+        height = im.shape[0] + self.border[0] * 2
+        width = im.shape[1] + self.border[1] * 2
+
+        # center
+        C = np.eye(3)
+        C[0, 2] = -im.shape[1] / 2
+        C[1, 2] = -im.shape[0] / 2
+
+        # perspective
+        P = np.eye(3)
+        P[2, 0] = random.uniform(-self.perspective, self.perspective)
+        P[2, 1] = random.uniform(-self.perspective, self.perspective)
+
+        # Rotation and scale
+        R = np.eye(3)
+        a = random.uniform(-self.degree, self.degree)
+        s = random.uniform(1 - self.scale, 1 + self.scale)
+        R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
+
+        # Shear
+        S = np.eye(3)
+        # shear x (deg)
+        S[0, 1] = math.tan(
+            random.uniform(-self.shear, self.shear) * math.pi / 180)
+        # shear y (deg)
+        S[1, 0] = math.tan(
+            random.uniform(-self.shear, self.shear) * math.pi / 180)
+
+        # Translation
+        T = np.eye(3)
+        T[0, 2] = random.uniform(0.5 - self.translate,
+                                 0.5 + self.translate) * width
+        T[1, 2] = random.uniform(0.5 - self.translate,
+                                 0.5 + self.translate) * height
+
+        # matmul
+        # M = T @ S @ R @ P @ C
+        M = np.eye(3)
+        for cM in [T, S, R, P, C]:
+            M = np.matmul(M, cM)
+
+        if (self.border[0] != 0) or (self.border[1] != 0) or (
+                M != np.eye(3)).any():
+            if self.perspective:
+                im = cv2.warpPerspective(
+                    im, M, dsize=(width, height), borderValue=self.border_value)
+            else:
+                im = cv2.warpAffine(
+                    im,
+                    M[:2],
+                    dsize=(width, height),
+                    borderValue=self.border_value)
+
+        if bbox.shape[0] > 0:
+            new_bbox, new_label, new_score = transform_bbox(
+                bbox,
+                label,
+                score,
+                M,
+                width,
+                height,
+                area_thr=self.area_thr,
+                perspective=self.perspective)
+        else:
+            new_bbox, new_label, new_score = bbox, label, score
+
+        sample['image'] = im
+        sample['h'] = im.shape[0]
+        sample['w'] = im.shape[1]
+        sample['gt_bbox'] = new_bbox.astype(np.float32)
+        sample['gt_class'] = new_label.astype(np.int32)
+        sample['gt_score'] = new_score.astype(np.float32)
+        return sample
+
+
+@register_op
+class RandomHSV(BaseOperator):
+    def __init__(self, hgain=0.5, sgain=0.5, vgain=0.5):
+        super(RandomHSV, self).__init__()
+        self.gains = [hgain, sgain, vgain]
+
+    def __call__(self, sample, context=None):
+        im = sample['image']
+        r = np.random.uniform(-1, 1, 3) * self.gains + 1
+        hue, sat, val = cv2.split(cv2.cvtColor(im, cv2.COLOR_RGB2HSV))
+        x = np.arange(0, 256, dtype=np.int16)
+        lut_hue = ((x * r[0]) % 180).astype(np.uint8)
+        lut_sat = np.clip(x * r[1], 0, 255).astype(np.uint8)
+        lut_val = np.clip(x * r[2], 0, 255).astype(np.uint8)
+        im_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat),
+                            cv2.LUT(val, lut_val))).astype(np.uint8)
+        im = cv2.cvtColor(im_hsv, cv2.COLOR_HSV2RGB)
+        sample['image'] = im
         return sample
 
 
