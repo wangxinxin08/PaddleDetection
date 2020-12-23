@@ -519,7 +519,8 @@ class Gt2YoloTarget_topk(BaseOperator):
                                             #gts=bboxes,
                                             #pos_thr=0.5,
                                             #neg_thr=0.5)
-            assigned_result = assigner.assign()
+            assigned_result, assigned_iou = assigner.assign()
+            #print('assigned_iou:', assigned_iou[assigned_iou>0])
             pos_idx = assigned_result>=0
             #print("$$$$$$$$, out side the assigner, $$$$$$$$$")
             #print("pos_idx:",np.argwhere(assigned_result>=0))
@@ -538,7 +539,7 @@ class Gt2YoloTarget_topk(BaseOperator):
             scales_target = np.zeros((anchors.shape[0]),dtype=np.float32)
             scales_target[pos_idx] = scales[pos_idx]
             obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
-            obj_target[pos_idx] = gt_scores[pos_idx]
+            obj_target[pos_idx] = gt_scores[pos_idx] * assigned_iou[pos_idx]
             #print("obj_target:",obj_target[pos_idx].sum())
             label_target = np.eye(self.num_classes)[gt_labels]
             label_target[assigned_result<0] = 0
@@ -1007,6 +1008,7 @@ class TopK_Assigner(object):
         #print("Topk_Assigner")
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
+        assigned_iou = np.zeros((num_anchors), dtype=np.float)
         overlaps = self.overlap_matrix(self.gts, self.anchors)
         overlaps_mask = np.zeros(overlaps.shape, dtype=np.float32)
         indices = np.argpartition(-overlaps, self.k, axis=1)[:, 0:self.k]
@@ -1017,16 +1019,8 @@ class TopK_Assigner(object):
         pos_inds = max_overlaps > 0.
         #print("iou:", max_overlaps[max_overlaps>0])
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
-        filtered_overlaps = overlaps.copy()
-        filtered_overlaps[:,pos_inds] = 0
-        gt_idx = np.arange(overlaps.shape[0])
-        gt_idx[argmax_overlaps[pos_inds]] = -1
-        gt_max_overlaps = filtered_overlaps.max(axis=1)
-        for i in range(self.gts.shape[0]):
-            if gt_idx[i] != -1:
-                max_iou_inds = filtered_overlaps[i, :] == gt_max_overlaps[i]
-                assigned_gt_inds[max_iou_inds] = i
-        return assigned_gt_inds
+        assigned_iou[pos_inds] = max_overlaps[pos_inds]
+        return assigned_gt_inds, assigned_iou
 
     def overlap_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
