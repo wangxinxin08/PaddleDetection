@@ -1004,18 +1004,21 @@ class TopK_Assigner(object):
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         assigned_iou = np.zeros((num_anchors), dtype=np.float)
         overlaps = self.overlap_matrix(self.gts, self.anchors)
-        gt_max_overlap = overlaps.max(axis=1)
-        overlaps = np.multiply(overlaps.T,1/gt_max_overlap).T
         overlaps_mask = np.zeros(overlaps.shape, dtype=np.float32)
         indices = np.argpartition(-overlaps, self.k, axis=1)[:, 0:self.k]
         overlaps_mask[np.repeat(np.arange(overlaps.shape[0]), self.k), indices.ravel()] = 1
         new_overlaps = overlaps * overlaps_mask
         max_overlaps = new_overlaps.max(axis=0)
         argmax_overlaps = new_overlaps.argmax(axis=0)
+        #gt_argmax_overlaps = overlaps.argmax(axis=1)
         pos_inds = max_overlaps > 0.
-        #print("iou:", max_overlaps[max_overlaps>0])
+        norm_ious = np.zeros(num_anchors) 
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
-        assigned_iou[pos_inds] = max_overlaps[pos_inds]
+        gt_max_overlap = overlaps.max(axis=1)
+        overlaps = np.multiply(overlaps.T,1/gt_max_overlap).T
+        for i in range(len(argmax_overlaps)):                                                                                                               
+            norm_ious[i] = overlaps[:,i][argmax_overlaps[i]]
+        assigned_iou[pos_inds] = norm_ious[pos_inds]
         return assigned_gt_inds, assigned_iou
 
     def overlap_matrix(self, bbox, gt):
