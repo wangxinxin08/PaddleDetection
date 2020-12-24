@@ -514,7 +514,7 @@ class Gt2YoloTarget_topk(BaseOperator):
             bboxes[:, 3] = (gt_bbox_filted[:,1] + gt_bbox_filted[:,3]/2) * h
             assigner = TopK_Assigner(anchors=anchors,
                                         gts=bboxes,
-                                        k=1)
+                                        k=5)
             #assigner = Max_IoU_Assigner(anchors=anchors,
                                             #gts=bboxes,
                                             #pos_thr=0.5,
@@ -540,7 +540,6 @@ class Gt2YoloTarget_topk(BaseOperator):
             scales_target[pos_idx] = scales[pos_idx]
             obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
             obj_target[pos_idx] = gt_scores[pos_idx] * assigned_iou[pos_idx]
-            #print("obj_target:",obj_target[pos_idx].sum())
             label_target = np.eye(self.num_classes)[gt_labels]
             label_target[assigned_result<0] = 0
             for i, (
@@ -563,12 +562,7 @@ class Gt2YoloTarget_topk(BaseOperator):
                 target[:,0:4,...] = reg_target[start:end].reshape((grid_w,grid_h,len(mask),4)).transpose(2,3,0,1)
                 target[:,4,...] = scales_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
                 target[:,5,...] = obj_target[start:end].reshape((grid_w,grid_h,len(mask))).transpose(2,0,1)
-                #print("=========")
-                #print("i:", i)
-                #print("grid_h:",grid_h)
-                #print("target[:,5,...]:", target[:,5,...].sum())
                 target[:,6:,...] = label_target[start:end].reshape((grid_w,grid_h,len(mask),80)).transpose(2,3,0,1)
-                np.save('my_t{}'.format(i), target)
                 sample['target{}'.format(i)] = target
         return samples
 
@@ -1010,6 +1004,8 @@ class TopK_Assigner(object):
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         assigned_iou = np.zeros((num_anchors), dtype=np.float)
         overlaps = self.overlap_matrix(self.gts, self.anchors)
+        gt_max_overlap = overlaps.max(axis=1)
+        overlaps = np.multiply(overlaps.T,1/gt_max_overlap).T
         overlaps_mask = np.zeros(overlaps.shape, dtype=np.float32)
         indices = np.argpartition(-overlaps, self.k, axis=1)[:, 0:self.k]
         overlaps_mask[np.repeat(np.arange(overlaps.shape[0]), self.k), indices.ravel()] = 1
