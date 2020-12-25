@@ -201,12 +201,20 @@ class YOLOv3Loss(object):
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
 
-            loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
-            #tcls = fluid.layers.argmax(x=tcls, axis=4)
-            #tcls = fluid.layers.cast(tcls, dtype="int32")
-            #tcls = fluid.layers.unsqueeze(tcls, axes=[4])
-            #fg_num = fluid.layers.reduce_sum(tcls)
-            #loss_cls = fluid.layers.sigmoid_focal_loss(cls, tcls, fg_num)
+            #loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+
+            fg_num = fluid.layers.reduce_sum(tcls)                                                                                                         
+            fg_num = fluid.layers.cast(fg_num, dtype="int32")                                                                                              
+            tcls = fluid.layers.argmax(x=tcls, axis=4) + 1                                                                                                 
+            tcls = fluid.layers.cast(tcls, dtype="int32")                                                                                                  
+            tcls = fluid.layers.unsqueeze(tcls, axes=[4])                                                                                                  
+            r_cls=fluid.layers.reshape(x=cls,shape=[-1,fluid.layers.shape(cls)[-1]])                                                                       
+            r_tcls=fluid.layers.reshape(x=tcls,shape=[-1,1])                                                                                               
+            r_tobj=fluid.layers.reshape(tobj,(-1,1))                                                                                                       
+            loss_cls = fluid.layers.sigmoid_focal_loss(r_cls, r_tcls, fg_num)                                                                              
+            loss_cls = fluid.layers.elementwise_mul(loss_cls, r_tobj, axis=0)                                                                              
+            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[0,1]) 
+
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
             loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
@@ -394,17 +402,17 @@ class YOLOv3Loss(object):
 
         # For positive objectness grids, objectness loss should be calculated
         # For negative objectness grids, objectness loss is calculated only iou_mask == 1.0
-        #loss_obj = fluid.layers.sigmoid_cross_entropy_with_logits(obj, obj_mask)
-        #loss_obj_pos = fluid.layers.reduce_sum(loss_obj * tobj, dim=[1, 2, 3])
-        #loss_obj_neg = fluid.layers.reduce_sum(
-            #loss_obj * (1.0 - obj_mask) * iou_mask, dim=[1, 2, 3])
+        loss_obj = fluid.layers.sigmoid_cross_entropy_with_logits(obj, obj_mask)
+        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * tobj, dim=[1, 2, 3])
+        loss_obj_neg = fluid.layers.reduce_sum(
+            loss_obj * (1.0 - obj_mask) * iou_mask, dim=[1, 2, 3])
         # focal Loss
-        fg_num = fluid.layers.reduce_sum(obj_mask)
-        fg_num = fluid.layers.cast(fg_num, dtype="int32")
-        r_obj = fluid.layers.reshape(x=obj, shape=[-1,1])
-        r_tobj = fluid.layers.reshape(x=obj_mask, shape=[-1, 1])
-        r_tobj = fluid.layers.cast(r_tobj, dtype="int32")
-        loss_obj = fluid.layers.sigmoid_focal_loss(r_obj, r_tobj, fg_num) * fg_num
-        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * r_tobj)
-        loss_obj_neg = fluid.layers.reduce_sum(loss_obj * (1.0 - r_tobj))
+        #fg_num = fluid.layers.reduce_sum(obj_mask)
+        #fg_num = fluid.layers.cast(fg_num, dtype="int32")
+        #r_obj = fluid.layers.reshape(x=obj, shape=[-1,1])
+        #r_tobj = fluid.layers.reshape(x=obj_mask, shape=[-1, 1])
+        #r_tobj = fluid.layers.cast(r_tobj, dtype="int32")
+        #loss_obj = fluid.layers.sigmoid_focal_loss(r_obj, r_tobj, fg_num) * fg_num
+        #loss_obj_pos = fluid.layers.reduce_sum(loss_obj * r_tobj)
+        #loss_obj_neg = fluid.layers.reduce_sum(loss_obj * (1.0 - r_tobj))
         return loss_obj_pos, loss_obj_neg
