@@ -215,8 +215,8 @@ class YOLOv3Loss(object):
             loss_cls = fluid.layers.elementwise_mul(loss_cls, r_tobj, axis=0)                                                                              
             loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[0,1]) 
 
-            loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
-            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
+            #loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
+            #loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
             loss_xys.append(fluid.layers.reduce_mean(loss_x + loss_y))
             loss_whs.append(fluid.layers.reduce_mean(loss_w + loss_h))
