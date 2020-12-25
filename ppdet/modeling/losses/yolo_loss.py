@@ -403,8 +403,8 @@ class YOLOv3Loss(object):
         fg_num = fluid.layers.cast(fg_num, dtype="int32")
         r_obj = fluid.layers.reshape(x=obj, shape=[-1,1])
         r_tobj = fluid.layers.reshape(x=obj_mask, shape=[-1, 1])
-        r_tobj = fluid.layers.cast(r_tobj > 0., dtype="int32")
-        loss_obj = fluid.layers.sigmoid_focal_loss(r_obj, r_tobj, fg_num)
-        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * obj_mask)
-        loss_obj_neg = fluid.layers.reduce_sum(loss_obj * (1.0 - obj_mask))
+        r_tobj = fluid.layers.cast(r_tobj, dtype="int32")
+        loss_obj = fluid.layers.sigmoid_focal_loss(r_obj, r_tobj, fg_num) * fg_num
+        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * r_tobj)
+        loss_obj_neg = fluid.layers.reduce_sum(loss_obj * (1.0 - r_tobj))
         return loss_obj_pos, loss_obj_neg
