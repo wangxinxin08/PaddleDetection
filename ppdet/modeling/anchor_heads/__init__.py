@@ -14,6 +14,7 @@
 
 from __future__ import absolute_import
 
+from . import yolo_head_pan
 from . import rpn_head
 from . import yolo_head
 from . import retina_head
@@ -22,6 +23,7 @@ from . import corner_head
 from . import efficient_head
 from . import ttf_head
 
+from .yolo_head_pan import *
 from .rpn_head import *
 from .yolo_head import *
 from .retina_head import *
