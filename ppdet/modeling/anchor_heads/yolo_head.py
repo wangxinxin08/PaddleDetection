@@ -481,30 +481,6 @@ class YOLOv3Head(object):
             return dict(losses1, **losses2)
         return losses1
 
-    def get_loss_byAssigner(self, input, gt_box, gt_label, gt_score, targets):
-        """
-        Get final loss of network of YOLOv3.
-
-        Args:
-            input (list): List of Variables, output of backbone stages
-            gt_box (Variable): The ground-truth boudding boxes.
-            gt_label (Variable): The ground-truth class labels.
-            gt_score (Variable): The ground-truth boudding boxes mixup scores.
-            targets ([Variables]): List of Variables, the targets for yolo
-                                   loss calculatation.
-
-        Returns:
-            loss (Variable): The loss Variable of YOLOv3 network.
-
-        """
-        outputs = self._get_outputs(input, is_train=True)
-        anchors = self.anchor_generator()
-        losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
-                              self.anchors, self.anchor_masks,
-                              self.mask_anchors, self.num_classes,
-                              self.prefix_name)
-        return losses1
-
     def get_prediction(self, input, im_size, exclude_nms=False):
         """
         Get prediction result of YOLOv3 network
@@ -554,6 +530,58 @@ class YOLOv3Head(object):
             yolo_scores = fluid.layers.transpose(yolo_scores, perm=[0, 2, 1])
         pred = self.nms(bboxes=yolo_boxes, scores=yolo_scores)
         return {'bbox': pred}
+    
+    def sigmoid(self, x):
+        return 1.0 / (1.0 + np.exp(-1.0 * x))
+
+    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh, downsample, clip_bbox, scale_x_y):
+        n, c, h, w = x.shape
+        an_num = int(len(anchors) // 2)
+        bias_x_y = -0.5 * (scale_x_y - 1.)
+        input_size = downsample * h
+
+        x = x.reshape((n, an_num, 5 + class_num, h, w)).transpose((0, 1, 3, 4, 2))
+
+        pred_box = x[:, :, :, :, :4].copy()
+        grid_x = np.tile(np.arange(w).reshape((1, w)), (h, 1))
+        grid_y = np.tile(np.arange(h).reshape((h, 1)), (1, w))
+        pred_box[:, :, :, :, 0] = (
+            grid_x + self.sigmoid(pred_box[:, :, :, :, 0]) * scale_x_y + bias_x_y) / w
+        pred_box[:, :, :, :, 1] = (
+            grid_y + self.sigmoid(pred_box[:, :, :, :, 1]) * scale_x_y + bias_x_y) / h
+
+        anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
+        anchors_s = np.array(
+            [(an_w / input_size, an_h / input_size) for an_w, an_h in anchors])
+        anchor_w = anchors_s[:, 0:1].reshape((1, an_num, 1, 1))
+        anchor_h = anchors_s[:, 1:2].reshape((1, an_num, 1, 1))
+        pred_box[:, :, :, :, 2] = np.exp(pred_box[:, :, :, :, 2]) * anchor_w
+        pred_box[:, :, :, :, 3] = np.exp(pred_box[:, :, :, :, 3]) * anchor_h
+
+        pred_conf = self.sigmoid(x[:, :, :, :, 4:5])
+        pred_conf[pred_conf < conf_thresh] = 0.
+        pred_score = self.sigmoid(x[:, :, :, :, 5:]) * pred_conf
+        pred_box = pred_box * (pred_conf > 0.).astype('float32')
+
+        pred_box = pred_box.reshape((n, -1, 4))
+        pred_box[:, :, :2], pred_box[:, :, 2:4] = \
+            pred_box[:, :, :2] - pred_box[:, :, 2:4] / 2., \
+            pred_box[:, :, :2] + pred_box[:, :, 2:4] / 2.0
+        pred_box[:, :, 0] = pred_box[:, :, 0] * img_size[:, 1][:, np.newaxis]
+        pred_box[:, :, 1] = pred_box[:, :, 1] * img_size[:, 0][:, np.newaxis]
+        pred_box[:, :, 2] = pred_box[:, :, 2] * img_size[:, 1][:, np.newaxis]
+        pred_box[:, :, 3] = pred_box[:, :, 3] * img_size[:, 0][:, np.newaxis]
+
+        if clip_bbox:
+            for i in range(len(pred_box)):
+                pred_box[i, :, 0] = np.clip(pred_box[i, :, 0], 0, np.inf)
+                pred_box[i, :, 1] = np.clip(pred_box[i, :, 1], 0, np.inf)
+                pred_box[i, :, 2] = np.clip(pred_box[i, :, 2], -np.inf,
+                                            img_size[i, 1] - 1)
+                pred_box[i, :, 3] = np.clip(pred_box[i, :, 3], -np.inf,
+                                            img_size[i, 0] - 1)
+
+        return pred_box, pred_score.reshape((n, -1, class_num))
 
 
 @register
