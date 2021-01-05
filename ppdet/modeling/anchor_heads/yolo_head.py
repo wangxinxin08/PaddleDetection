@@ -532,7 +532,7 @@ class YOLOv3Head(object):
             #     conf_thresh=self.nms.score_threshold,
             #     downsample_ratio=self.downsample[i],
             #     name=self.prefix_name + "yolo_box" + str(i),
-            #     clip_bbox=False,
+            #     clip_bbox=True,
             #     scale_x_y=scale_x_y)
             boxes.append(box)
             scores.append(fluid.layers.transpose(score, perm=[0, 2, 1]))
@@ -557,13 +557,6 @@ class YOLOv3Head(object):
         grid = fluid.layers.stack([xv, yv], axis=2)
         return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
 
-    def _xywh2xxyy(self, xc, yc, wc, hc):
-        x1 = xc - wc / 2
-        y1 = yc - hc / 2
-        x2 = xc + wc / 2
-        y2 = yc + hc / 2
-        return fluid.layers.concat([x1, y1, x2, y2], axis=-1)
-
     def yolo_box(self, x, img_size, anchors, class_num, conf_thresh,
                  downsample_ratio, clip_bbox, scale_x_y):
         shape = fluid.layers.shape(x)
@@ -586,16 +579,20 @@ class YOLOv3Head(object):
             w * downsample_ratio)
         hc = fluid.layers.exp(x[:, :, :, :, 3:4]) * anchors[:, :, :, :, 1:2] / (
             h * downsample_ratio)
+        x1 = xc - wc * 0.5
+        y1 = yc - hc * 0.5
+        x2 = xc + wc * 0.5
+        y2 = yc + hc * 0.5
         if clip_bbox:
-            xc = fluid.layers.clip(xc, 0., 1.)
-            yc = fluid.layers.clip(yc, 0., 1.)
-            wc = fluid.layers.clip(wc, 0., 1.)
-            hc = fluid.layers.clip(hc, 0., 1.)
-        xc = xc * im_w
-        yc = yc * im_h
-        wc = wc * im_w
-        hc = hc * im_h
-        bbox = self._xywh2xxyy(xc, yc, wc, hc)
+            xc = fluid.layers.clip(x1, 0., 1.)
+            yc = fluid.layers.clip(y1, 0., 1.)
+            wc = fluid.layers.clip(x2, 0., 1.)
+            hc = fluid.layers.clip(y2, 0., 1.)
+        x1 = x1 * im_w
+        y1 = y1 * im_h
+        x2 = x2 * im_w
+        y2 = y2 * im_h
+        bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
 
         conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
         mask = fluid.layers.cast(conf >= conf_thresh, 'float32')
