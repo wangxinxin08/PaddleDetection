@@ -522,7 +522,7 @@ class YOLOv3Head(object):
                 class_num=self.num_classes,
                 conf_thresh=self.nms.score_threshold,
                 downsample_ratio=self.downsample[i],
-                clip_bbox=False,
+                clip_bbox=True,
                 scale_x_y=scale_x_y)
             # box, score = fluid.layers.yolo_box(
             #     x=output,
@@ -579,13 +579,22 @@ class YOLOv3Head(object):
         im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
         im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
         xc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 0:1]) - bias_x_y +
-              grid[:, :, :, :, 0:1]) / w * im_w
+              grid[:, :, :, :, 0:1]) / w
         yc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 1:2]) - bias_x_y +
-              grid[:, :, :, :, 1:2]) / h * im_h
+              grid[:, :, :, :, 1:2]) / h
         wc = fluid.layers.exp(x[:, :, :, :, 2:3]) * anchors[:, :, :, :, 0:1] / (
-            w * downsample_ratio) * im_w
+            w * downsample_ratio)
         hc = fluid.layers.exp(x[:, :, :, :, 3:4]) * anchors[:, :, :, :, 1:2] / (
-            h * downsample_ratio) * im_h
+            h * downsample_ratio)
+        if clip_bbox:
+            xc = fluid.layers.clip(xc, 0., 1.)
+            yc = fluid.layers.clip(yc, 0., 1.)
+            wc = fluid.layers.clip(wc, 0., 1.)
+            hc = fluid.layers.clip(hc, 0., 1.)
+        xc = xc * im_w
+        yc = yc * im_h
+        wc = wc * im_w
+        hc = hc * im_h
         bbox = self._xywh2xxyy(xc, yc, wc, hc)
 
         conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
@@ -594,13 +603,6 @@ class YOLOv3Head(object):
         score = fluid.layers.sigmoid(x[:, :, :, :, 5:]) * conf
 
         bbox = bbox * mask
-
-        if clip_bbox:
-            x1 = fluid.layers.clip(x[:, :, :, :, 0:1], 0, w * downsample_ratio)
-            y1 = fluid.layers.clip(x[:, :, :, :, 1:2], 0, h * downsample_ratio)
-            x2 = fluid.layers.clip(x[:, :, :, :, 2:3], 0, w * downsample_ratio)
-            y2 = fluid.layers.clip(x[:, :, :, :, 3:4], 0, h * downsample_ratio)
-            bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
 
         bbox = fluid.layers.reshape(bbox, (b, -1, 4))
         score = fluid.layers.reshape(score, (b, -1, class_num))
