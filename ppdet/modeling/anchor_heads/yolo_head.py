@@ -586,8 +586,8 @@ class YOLOv3Head(object):
         if clip_bbox:
             x1 = fluid.layers.clip(x1, 0., 1.)
             y1 = fluid.layers.clip(y1, 0., 1.)
-            w1 = fluid.layers.clip(x2, 0., 1.)
-            h1 = fluid.layers.clip(y2, 0., 1.)
+            x2 = fluid.layers.clip(x2, 0., 1.)
+            y2 = fluid.layers.clip(y2, 0., 1.)
         x1 = x1 * im_w
         y1 = y1 * im_h
         x2 = x2 * im_w
