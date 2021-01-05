@@ -167,13 +167,13 @@ class YOLOv3Loss(object):
                     y, ty) * tscale_tobj
                 loss_y = fluid.layers.reduce_sum(loss_y, dim=[1, 2, 3])
             else:
-                dx = scale_x_y * fluid.layers.sigmoid(x) - 0.5 * (scale_x_y -
-                                                                  1.0)
-                dy = scale_x_y * fluid.layers.sigmoid(y) - 0.5 * (scale_x_y -
-                                                                  1.0)
-                loss_x = fluid.layers.abs(dx - tx) * tscale_tobj
+                # dx = scale_x_y * fluid.layers.sigmoid(x) - 0.5 * (scale_x_y -
+                #                                                   1.0)
+                # dy = scale_x_y * fluid.layers.sigmoid(y) - 0.5 * (scale_x_y -
+                #                                                   1.0)
+                loss_x = fluid.layers.abs(x - tx) * tscale_tobj
                 loss_x = fluid.layers.reduce_sum(loss_x, dim=[1, 2, 3])
-                loss_y = fluid.layers.abs(dy - ty) * tscale_tobj
+                loss_y = fluid.layers.abs(y - ty) * tscale_tobj
                 loss_y = fluid.layers.reduce_sum(loss_y, dim=[1, 2, 3])
 
             # NOTE: we refined loss function of (w, h) as L1Loss
@@ -202,22 +202,22 @@ class YOLOv3Loss(object):
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
 
-            #loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+            loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
 
-            fg_num = fluid.layers.reduce_sum(tcls)                                                                                                         
-            fg_num = fluid.layers.cast(fg_num, dtype="int32")                                                                                              
-            tcls = fluid.layers.argmax(x=tcls, axis=4) + 1                                                                                                 
-            tcls = fluid.layers.cast(tcls, dtype="int32")                                                                                                  
-            tcls = fluid.layers.unsqueeze(tcls, axes=[4])                                                                                                  
-            r_cls=fluid.layers.reshape(x=cls,shape=[-1,fluid.layers.shape(cls)[-1]])                                                                       
-            r_tcls=fluid.layers.reshape(x=tcls,shape=[-1,1])                                                                                               
-            r_tobj=fluid.layers.reshape(tobj,(-1,1))                                                                                                       
-            loss_cls = fluid.layers.sigmoid_focal_loss(r_cls, r_tcls, fg_num)                                                                              
-            loss_cls = fluid.layers.elementwise_mul(loss_cls, r_tobj, axis=0)                                                                              
-            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[0,1]) 
+            # fg_num = fluid.layers.reduce_sum(tcls)                                                                                                         
+            # fg_num = fluid.layers.cast(fg_num, dtype="int32")                                                                                              
+            # tcls = fluid.layers.argmax(x=tcls, axis=4) + 1                                                                                                 
+            # tcls = fluid.layers.cast(tcls, dtype="int32")                                                                                                  
+            # tcls = fluid.layers.unsqueeze(tcls, axes=[4])                                                                                                  
+            # r_cls=fluid.layers.reshape(x=cls,shape=[-1,fluid.layers.shape(cls)[-1]])                                                                       
+            # r_tcls=fluid.layers.reshape(x=tcls,shape=[-1,1])                                                                                               
+            # r_tobj=fluid.layers.reshape(tobj,(-1,1))                                                                                                       
+            # loss_cls = fluid.layers.sigmoid_focal_loss(r_cls, r_tcls, fg_num)                                                                              
+            # loss_cls = fluid.layers.elementwise_mul(loss_cls, r_tobj, axis=0)                                                                              
+            # loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[0,1]) 
 
-            #loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
-            #loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
+            loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
+            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
             loss_xys.append(fluid.layers.reduce_mean(loss_x + loss_y))
             loss_whs.append(fluid.layers.reduce_mean(loss_w + loss_h))
@@ -341,7 +341,7 @@ class YOLOv3Loss(object):
 
         # 1. get pred bbox, which is same with YOLOv3 infer mode, use yolo_box here
         # NOTE: img_size is set as 1.0 to get noramlized pred bbox
-        bbox, prob = fluid.layers.yolo_box(
+        bbox, prob = self.yolo_box(
             x=output,
             img_size=fluid.layers.ones(
                 shape=[batch_size, 2], dtype="int32"),
@@ -418,54 +418,64 @@ class YOLOv3Loss(object):
         #loss_obj_neg = fluid.layers.reduce_sum(loss_obj * (1.0 - r_tobj))
         return loss_obj_pos, loss_obj_neg
 
-    def sigmoid(self, x):
-        return 1.0 / (1.0 + np.exp(-1.0 * x))
+    def _make_grid(self, nx, ny):
+        yv, xv = fluid.layers.meshgrid([
+            fluid.layers.range(0, ny, 1, 'float32'),
+            fluid.layers.range(0, nx, 1, 'float32')
+        ])
+        grid = fluid.layers.stack([xv, yv], axis=2)
+        return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
+    
+    def _create_tensor_from_numpy(self, numpy_array):
+        paddle_array = fluid.layers.create_global_var(
+            shape=numpy_array.shape, value=0., dtype=numpy_array.dtype)
+        fluid.layers.assign(numpy_array, paddle_array)
+        return paddle_array
 
-    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh, downsample, clip_bbox, scale_x_y):
-        n, c, h, w = x.shape
-        an_num = int(len(anchors) // 2)
-        bias_x_y = -0.5 * (scale_x_y - 1.)
-        input_size = downsample * h
-
-        x = x.reshape((n, an_num, 5 + class_num, h, w)).transpose((0, 1, 3, 4, 2))
-
-        pred_box = x[:, :, :, :, :4].copy()
-        grid_x = np.tile(np.arange(w).reshape((1, w)), (h, 1))
-        grid_y = np.tile(np.arange(h).reshape((h, 1)), (1, w))
-        pred_box[:, :, :, :, 0] = (
-            grid_x + self.sigmoid(pred_box[:, :, :, :, 0]) * scale_x_y + bias_x_y) / w
-        pred_box[:, :, :, :, 1] = (
-            grid_y + self.sigmoid(pred_box[:, :, :, :, 1]) * scale_x_y + bias_x_y) / h
-
-        anchors = [(anchors[i], anchors[i + 1]) for i in range(0, len(anchors), 2)]
-        anchors_s = np.array(
-            [(an_w / input_size, an_h / input_size) for an_w, an_h in anchors])
-        anchor_w = anchors_s[:, 0:1].reshape((1, an_num, 1, 1))
-        anchor_h = anchors_s[:, 1:2].reshape((1, an_num, 1, 1))
-        pred_box[:, :, :, :, 2] = np.exp(pred_box[:, :, :, :, 2]) * anchor_w
-        pred_box[:, :, :, :, 3] = np.exp(pred_box[:, :, :, :, 3]) * anchor_h
-
-        pred_conf = self.sigmoid(x[:, :, :, :, 4:5])
-        pred_conf[pred_conf < conf_thresh] = 0.
-        pred_score = self.sigmoid(x[:, :, :, :, 5:]) * pred_conf
-        pred_box = pred_box * (pred_conf > 0.).astype('float32')
-
-        pred_box = pred_box.reshape((n, -1, 4))
-        pred_box[:, :, :2], pred_box[:, :, 2:4] = \
-            pred_box[:, :, :2] - pred_box[:, :, 2:4] / 2., \
-            pred_box[:, :, :2] + pred_box[:, :, 2:4] / 2.0
-        pred_box[:, :, 0] = pred_box[:, :, 0] * img_size[:, 1][:, np.newaxis]
-        pred_box[:, :, 1] = pred_box[:, :, 1] * img_size[:, 0][:, np.newaxis]
-        pred_box[:, :, 2] = pred_box[:, :, 2] * img_size[:, 1][:, np.newaxis]
-        pred_box[:, :, 3] = pred_box[:, :, 3] * img_size[:, 0][:, np.newaxis]
-
+    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh,
+                 downsample_ratio, clip_bbox, scale_x_y):
+        shape = fluid.layers.shape(x)
+        b, c, h, w = shape[0], shape[1], shape[2], shape[3]
+        na = len(anchors) // 2
+        no = class_num + 5
+        x = fluid.layers.reshape(x, [b, na, no, h, w])
+        x = fluid.layers.transpose(x, perm=[0, 1, 3, 4, 2])
+        anchors = np.array(anchors).reshape((1, na, 1, 1, 2))
+        anchors = self._create_tensor_from_numpy(anchors)
+        grid = self._make_grid(w, h)
+        bias_x_y = 0.5 * (scale_x_y - 1)
+        im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
+        im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
+        xc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 0:1]) - bias_x_y +
+              grid[:, :, :, :, 0:1]) / w
+        yc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 1:2]) - bias_x_y +
+              grid[:, :, :, :, 1:2]) / h
+        wc = fluid.layers.exp(x[:, :, :, :, 2:3]) * anchors[:, :, :, :, 0:1] / (
+            w * downsample_ratio)
+        hc = fluid.layers.exp(x[:, :, :, :, 3:4]) * anchors[:, :, :, :, 1:2] / (
+            h * downsample_ratio)
+        x1 = xc - wc * 0.5
+        y1 = yc - hc * 0.5
+        x2 = xc + wc * 0.5
+        y2 = yc + hc * 0.5
         if clip_bbox:
-            for i in range(len(pred_box)):
-                pred_box[i, :, 0] = np.clip(pred_box[i, :, 0], 0, np.inf)
-                pred_box[i, :, 1] = np.clip(pred_box[i, :, 1], 0, np.inf)
-                pred_box[i, :, 2] = np.clip(pred_box[i, :, 2], -np.inf,
-                                            img_size[i, 1] - 1)
-                pred_box[i, :, 3] = np.clip(pred_box[i, :, 3], -np.inf,
-                                            img_size[i, 0] - 1)
+            x1 = fluid.layers.clip(x1, 0., 1.)
+            y1 = fluid.layers.clip(y1, 0., 1.)
+            x2 = fluid.layers.clip(x2, 0., 1.)
+            y2 = fluid.layers.clip(y2, 0., 1.)
+        x1 = x1 * im_w
+        y1 = y1 * im_h
+        x2 = x2 * im_w
+        y2 = y2 * im_h
+        bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
 
-        return pred_box, pred_score.reshape((n, -1, class_num))
+        conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
+        mask = fluid.layers.cast(conf >= conf_thresh, 'float32')
+        conf = conf * mask
+        score = fluid.layers.sigmoid(x[:, :, :, :, 5:]) * conf
+
+        bbox = bbox * mask
+
+        bbox = fluid.layers.reshape(bbox, (b, -1, 4))
+        score = fluid.layers.reshape(score, (b, -1, class_num))
+        return bbox, score
