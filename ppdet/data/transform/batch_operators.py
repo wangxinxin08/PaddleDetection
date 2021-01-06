@@ -1030,4 +1030,11 @@ class TopK_Assigner(object):
         gt_areas = (gt[:, 2] - gt[:, 0] + 1) * (gt[:, 3] - gt[:, 1] + 1)
         unioun_areas = box_areas[:, None] + gt_areas - inter_areas
         IoU = np.divide(inter_areas, unioun_areas, out=np.zeros_like(inter_areas), where=unioun_areas!=0) 
-        return IoU
+
+        center_x1 = (bbox[:, 2:3] + bbox[:, 0:1]) / 2 
+        center_y1 = (bbox[:, 3:4] + bbox[:, 1:2]) / 2 
+        center_x2 = (gt[:, 2:3] + gt[:, 0:1]) / 2
+        center_y2 = (gt[:, 3:4] + gt[:, 1:2]) / 2
+        center_distance = abs(center_x1-center_x2.T)+abs(center_y1-center_y2.T)+5
+        close = 1 / center_distance
+        return IoU+close
