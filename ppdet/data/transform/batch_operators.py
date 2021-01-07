@@ -1003,7 +1003,7 @@ class TopK_Assigner(object):
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
         assigned_iou = np.zeros((num_anchors), dtype=np.float)
-        overlaps = self.overlap_matrix(self.gts, self.anchors)
+        overlaps = self.diou_matrix(self.gts, self.anchors)
         overlaps_mask = np.zeros(overlaps.shape, dtype=np.float32)
         indices = np.argpartition(-overlaps, self.k, axis=1)[:, 0:self.k]
         overlaps_mask[np.repeat(np.arange(overlaps.shape[0]), self.k), indices.ravel()] = 1
@@ -1038,3 +1038,27 @@ class TopK_Assigner(object):
         center_distance = abs(center_x1-center_x2.T)+abs(center_y1-center_y2.T)+5
         close = 1 / center_distance
         return IoU+close
+        
+    def diou_matrix(self, bbox, gt):
+        lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
+        rb = np.minimum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
+        wh = np.maximum(rb - lt + 1, 0)                # inter_area (w, h)
+        inter_areas = wh[:, :, 0] * wh[:, :, 1]        # shape: (n, m)
+        box_areas = (bbox[:, 2] - bbox[:, 0] + 1) * (bbox[:, 3] - bbox[:, 1] + 1)
+        gt_areas = (gt[:, 2] - gt[:, 0] + 1) * (gt[:, 3] - gt[:, 1] + 1)
+        unioun_areas = box_areas[:, None] + gt_areas - inter_areas
+        IoU = np.divide(inter_areas, unioun_areas, out=np.zeros_like(inter_areas), where=unioun_areas!=0) 
+
+        center_x1 = (bbox[:, 2:3] + bbox[:, 0:1]) / 2 
+        center_y1 = (bbox[:, 3:4] + bbox[:, 1:2]) / 2 
+        center_x2 = (gt[:, 2:3] + gt[:, 0:1]) / 2
+        center_y2 = (gt[:, 3:4] + gt[:, 1:2]) / 2
+        
+        lt = np.minimum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
+        rb = np.maximum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
+        center_distance = np.power(center_x1-center_x2.T,2)+np.power(center_y1-center_y2.T,2)
+        ltrb_distance = np.power(lt[:,0]-rb[:,0],2)+np.power(lt[:,1]-rb[:,1],2)
+        diou_term =  center_distance / ltrb_distance
+        #print(diou_term)
+        dIoU = (IoU - diou_term).clip(-1,1)
+        return dIoU
