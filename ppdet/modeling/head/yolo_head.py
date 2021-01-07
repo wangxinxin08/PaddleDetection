@@ -84,6 +84,8 @@ class YOLOv3Head(nn.Layer):
             y = []
             for i, out in enumerate(outputs):
                 na = len(self.anchors[i])
+                # ioup = out[:, 0:na, :, :]
+                # x = paddle.slice(out, axes=[1], starts=[na], end=[258])
                 ioup, x = out[:, 0:na, :, :], out[:, na:, :, :]
                 b, c, h, w = x.shape
                 no = c // na

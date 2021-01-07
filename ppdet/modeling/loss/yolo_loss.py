@@ -22,6 +22,8 @@ import paddle.nn.functional as F
 from ppdet.core.workspace import register
 
 from ..utils import decode_yolo, xywh2xyxy, iou_similarity
+import os
+import numpy as np
 
 __all__ = ['YOLOv3Loss']
 
@@ -86,7 +88,14 @@ class YOLOv3Loss(nn.Layer):
             pcls, tcls, reduction='none')
         return loss_cls
 
-    def yolov3_loss(self, x, t, gt_box, anchor, downsample, scale=1.,
+    def yolov3_loss(self,
+                    x,
+                    t,
+                    gt_box,
+                    anchor,
+                    downsample,
+                    i,
+                    scale=1.,
                     eps=1e-10):
         na = len(anchor)
         b, c, h, w = x.shape
@@ -116,42 +125,52 @@ class YOLOv3Loss(nn.Layer):
 
         loss['loss_xy'] = loss_xy
         loss['loss_wh'] = loss_wh
-
         x[:, :, :, :, 0:2] = scale * F.sigmoid(x[:, :, :, :, 0:2]) - 0.5 * (
             scale - 1.)
         if self.iou_loss is not None:
             box, tbox = x[:, :, :, :, 0:4], t[:, :, :, :, 0:4]
-            loss_iou = self.iou_loss(box, tbox, anchor, downsample)
+            # self.loss_ious.append(box)
+            # print('loss_iou box.stop_gradient:', box.stop_gradient)
+            loss_iou, pbox = self.iou_loss(box, tbox, anchor, downsample, i,
+                                           self.scale_x_y)
+            self.loss_ious.append(pbox)
+            # print('loss_iou loss_iou.stop_gradient:', loss_iou.stop_gradient)
             loss_iou = loss_iou * tscale_obj.reshape((b, -1))
+            # self.loss_ious.append(loss_iou)
             loss_iou = loss_iou.sum(-1).mean()
+            path = os.path.join('grad', 'loss_iou_{}.npy'.format(i))
+            np.save(path, loss_iou.numpy())
+            # self.loss_ious.append(loss_iou)
             loss['loss_iou'] = loss_iou
 
-        if self.iou_aware_loss is not None:
-            box, tbox = x[:, :, :, :, 0:4], t[:, :, :, :, 0:4]
-            loss_iou_aware = self.iou_aware_loss(ioup, box, tbox, anchor,
-                                                 downsample)
-            loss_iou_aware = loss_iou_aware * tobj.squeeze(-1).transpose(
-                (0, 3, 1, 2))
-            loss_iou_aware = loss_iou_aware.sum([1, 2, 3]).mean()
-            loss['loss_iou_aware'] = loss_iou_aware
+        # if self.iou_aware_loss is not None:
+        #     box, tbox = x[:, :, :, :, 0:4], t[:, :, :, :, 0:4]
+        #     loss_iou_aware = self.iou_aware_loss(ioup, box, tbox, anchor,
+        #                                          downsample)
+        #     loss_iou_aware = loss_iou_aware * tobj.squeeze(-1).transpose(
+        #         (0, 3, 1, 2))
+        #     loss_iou_aware = loss_iou_aware.sum([1, 2, 3]).mean()
+        #     loss['loss_iou_aware'] = loss_iou_aware
 
-        box = x[:, :, :, :, 0:4]
-        loss_obj = self.obj_loss(box, gt_box, obj, tobj, anchor, downsample)
-        loss_obj = loss_obj.sum(-1).mean()
-        loss['loss_obj'] = loss_obj
-        loss_cls = self.cls_loss(pcls, tcls) * tobj
-        loss_cls = loss_cls.sum([1, 2, 3, 4]).mean()
-        loss['loss_cls'] = loss_cls
+        # box = x[:, :, :, :, 0:4]
+        # loss_obj = self.obj_loss(box, gt_box, obj, tobj, anchor, downsample)
+        # loss_obj = loss_obj.sum(-1).mean()
+        # loss['loss_obj'] = loss_obj
+        # loss_cls = self.cls_loss(pcls, tcls) * tobj
+        # loss_cls = loss_cls.sum([1, 2, 3, 4]).mean()
+        # loss['loss_cls'] = loss_cls
         return loss
 
     def forward(self, inputs, targets, anchors):
+        self.loss_ious = []
         np = len(inputs)
         gt_targets = [targets['target{}'.format(i)] for i in range(np)]
         gt_box = targets['gt_bbox']
         yolo_losses = dict()
-        for x, t, anchor, downsample in zip(inputs, gt_targets, anchors,
-                                            self.downsample):
-            yolo_loss = self.yolov3_loss(x, t, gt_box, anchor, downsample,
+        for i, (
+                x, t, anchor, downsample
+        ) in enumerate(zip(inputs, gt_targets, anchors, self.downsample)):
+            yolo_loss = self.yolov3_loss(x, t, gt_box, anchor, downsample, i,
                                          self.scale_x_y)
             for k, v in yolo_loss.items():
                 if k in yolo_losses:

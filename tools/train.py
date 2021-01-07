@@ -177,9 +177,40 @@ def run(FLAGS, cfg, place):
             # Model Backward
             loss = outputs['loss']
             loss.backward()
+            loss_ious = model.yolo_head.loss.loss_ious
+            print(len(loss_ious))
+            for i in range(3):
+                path = os.path.join('grad',
+                                    'pbox_{}@GRAD_{}.npy'.format(i, cur_eid))
+                np.save(path, loss_ious[i].gradient())
             optimizer.step()
             curr_lr = optimizer.get_lr()
             lr.step()
+            for param in model.parameters():
+                if not param.stop_gradient:
+                    try:
+                        extra_keys = [
+                            'conv1_1_weights', 'res5c_branch2c_weights'
+                        ]
+                        # extra_keys = []
+                        for i in range(3):
+                            extra_keys += [
+                                'yolo_output.{}.conv.weights'.format(i),
+                                'yolo_output.{}.conv.bias'.format(i)
+                            ]
+                        if param.name in extra_keys:
+                            gradient = param.gradient()
+                            path = os.path.join('grad', '{}@GRAD_{}.npy'.format(
+                                param.name, cur_eid))
+                            np.save(path, gradient)
+                            print('eid {}, iter id {}, grad of {} saved'.format(
+                                cur_eid, iter_id, param.name))
+                    except Exception:
+                        print('exception: eid {}, iter id {}, param {}'.format(
+                            cur_eid, iter_id, param.name))
+                # else:
+                #     print('eid {}, iter id {}, param {} no gradient'.format(cur_eid, iter_id, param.name))
+
             optimizer.clear_grad()
 
             if ParallelEnv().nranks < 2 or ParallelEnv().local_rank == 0:

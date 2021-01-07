@@ -1,4 +1,4 @@
-epoch: 192
+epoch: 1
 
 LearningRate:
   base_lr: 0.01
@@ -8,9 +8,9 @@ LearningRate:
     milestones:
     - 154
     - 172
-  - !LinearWarmup
-    start_factor: 0.
-    steps: 4000
+  # - !LinearWarmup
+  #   start_factor: 0.
+  #   steps: 4000
 
 OptimizerBuilder:
   optimizer:

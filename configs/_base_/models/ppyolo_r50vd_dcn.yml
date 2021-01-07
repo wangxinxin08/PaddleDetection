@@ -24,7 +24,7 @@ ResNet:
 PPYOLOFPN:
   feat_channels: [2048, 1280, 640]
   coord_conv: true
-  drop_block: true
+  drop_block: false
   block_size: 3
   keep_prob: 0.9
   spp: true
@@ -46,7 +46,7 @@ YOLOv3Loss:
   iou_loss: IouLoss
   iou_aware_loss: IouAwareLoss
 
-IoULoss:
+IouLoss:
   loss_weight: 2.5
   loss_square: true
 

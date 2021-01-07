@@ -22,10 +22,14 @@ import math
 
 
 def xywh2xyxy(box):
-    out = paddle.zeros_like(box)
-    out[:, :, 0:2] = box[:, :, 0:2] - box[:, :, 2:4] / 2
-    out[:, :, 2:4] = box[:, :, 0:2] + box[:, :, 2:4] / 2
-    return out
+    # out = paddle.zeros_like(box)
+    # out.stop_gradient = False
+    # out[:, :, 0:2] = box[:, :, 0:2] - box[:, :, 2:4] / 2
+    # out[:, :, 2:4] = box[:, :, 0:2] + box[:, :, 2:4] / 2
+    # return out
+    x1y1 = box[:, :, 0:2] - box[:, :, 2:4] / 2
+    x2y2 = box[:, :, 0:2] + box[:, :, 2:4] / 2
+    return paddle.concat([x1y1, x2y2], axis=-1)
 
 
 def make_grid(h, w, dtype):
@@ -33,7 +37,7 @@ def make_grid(h, w, dtype):
     return paddle.stack((xv, yv), 2).cast(dtype=dtype)
 
 
-def decode_yolo(box, anchor, downsample_ratio):
+def decode_yolo(box, anchor, downsample_ratio, scale_x_y, is_gt):
     """decode yolo box
 
     Args:
@@ -46,18 +50,29 @@ def decode_yolo(box, anchor, downsample_ratio):
         box (Tensor): decoded box, with the shape [b, h, w, na, 4]
     """
     h, w, na = box.shape[1:4]
+    if not is_gt:
+        xy = scale_x_y * F.sigmoid(box[:, :, :, :, :2]) - 0.5 * (scale_x_y - 1)
+    else:
+        xy = box[:, :, :, :, :2]
     grid = make_grid(h, w, box.dtype).reshape((1, h, w, 1, 2))
-    box[:, :, :, :, 0:2] = box[:, :, :, :, :2] + grid
-    box[:, :, :, :, 0] = box[:, :, :, :, 0] / w
-    box[:, :, :, :, 1] = box[:, :, :, :, 1] / h
+    xy = xy + grid
+    xc = xy[:, :, :, :, 0:1] / w
+    yc = xy[:, :, :, :, 1:2] / h
+    # box[:, :, :, :, 0:2] = box[:, :, :, :, :2] + grid
+    # box[:, :, :, :, 0] = box[:, :, :, :, 0] / w
+    # box[:, :, :, :, 1] = box[:, :, :, :, 1] / h
 
     anchor = paddle.to_tensor(anchor)
     anchor = paddle.cast(anchor, box.dtype)
     anchor = anchor.reshape((1, 1, 1, na, 2))
-    box[:, :, :, :, 2:4] = paddle.exp(box[:, :, :, :, 2:4]) * anchor
-    box[:, :, :, :, 2] = box[:, :, :, :, 2] / (downsample_ratio * w)
-    box[:, :, :, :, 3] = box[:, :, :, :, 3] / (downsample_ratio * h)
-    return box
+    # box[:, :, :, :, 2:4] = paddle.exp(box[:, :, :, :, 2:4]) * anchor
+    # box[:, :, :, :, 2] = box[:, :, :, :, 2] / (downsample_ratio * w)
+    # box[:, :, :, :, 3] = box[:, :, :, :, 3] / (downsample_ratio * h)
+    whc = paddle.exp(box[:, :, :, :, 2:4]) * anchor
+    wc = whc[:, :, :, :, 0:1] / (downsample_ratio * w)
+    hc = whc[:, :, :, :, 1:2] / (downsample_ratio * h)
+    # return box
+    return paddle.concat([xc, yc, wc, hc], axis=-1)
 
 
 def iou_similarity(box1, box2, eps=1e-9):

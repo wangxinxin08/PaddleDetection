@@ -149,11 +149,11 @@ class PPYOLODetBlock(nn.Layer):
         super(PPYOLODetBlock, self).__init__()
         self.conv_module = nn.Sequential()
         for idx, (conv_name, layer, args, kwargs) in enumerate(cfg[:-1]):
-            kwargs.update(name='{}.{}'.format(name + conv_name, idx))
+            kwargs.update(name='{}.{}'.format(name, conv_name))
             self.conv_module.add_sublayer(conv_name, layer(*args, **kwargs))
 
         conv_name, layer, args, kwargs = cfg[-1]
-        kwargs.update(name='{}.tip'.format(name + conv_name))
+        kwargs.update(name='{}.{}'.format(name, conv_name))
         self.tip = layer(*args, **kwargs)
 
     def forward(self, inputs):

@@ -116,8 +116,9 @@ class LearningRate(object):
     def __call__(self, step_per_epoch):
         # TODO: split warmup & decay 
         # warmup
-        boundary, value = self.schedulers[1](self.base_lr)
+        # boundary, value = self.schedulers[1](self.base_lr)
         # decay
+        boundary, value = [], [self.base_lr]
         decay_lr = self.schedulers[0](self.base_lr, boundary, value,
                                       step_per_epoch)
         return decay_lr

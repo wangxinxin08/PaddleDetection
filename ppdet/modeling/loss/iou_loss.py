@@ -20,6 +20,8 @@ import paddle
 import paddle.nn.functional as F
 from ppdet.core.workspace import register, serializable
 from ..utils import xywh2xyxy, bbox_iou, decode_yolo
+import numpy as np
+import os
 
 __all__ = ['IouLoss']
 
@@ -50,24 +52,44 @@ class IouLoss(object):
         self.ciou = ciou
         self.loss_square = loss_square
 
-    def __call__(self, pbox, gbox, anchor, downsample):
-        iou = self._iou(pbox, gbox, anchor, downsample)
+    def __call__(self, pbox, gbox, anchor, downsample, i, scale_x_y):
+        pbox = self.bbox_transfrom(
+            pbox, anchor, downsample, scale_x_y, is_gt=False)
+        gbox = self.bbox_transfrom(gbox, anchor, downsample)
+        print('loss_iou pbox.stop_gradient:', pbox.stop_gradient)
+        print('loss_iou gbox.stop_gradient:', gbox.stop_gradient)
+        iou = bbox_iou(
+            pbox, gbox, giou=self.giou, diou=self.diou, ciou=self.ciou)
+        print('loss_iou iou.stop_gradient:', iou.stop_gradient)
+        # iou = self._iou(pbox, gbox, anchor, downsample)
+        path = os.path.join('grad', 'iou_{}.npy'.format(i))
+        np.save(path, iou.numpy())
         if self.loss_square:
             loss_iou = 1 - iou * iou
         else:
             loss_iou = 1 - iou
 
         loss_iou = loss_iou * self.loss_weight
-        return loss_iou
+        return loss_iou, pbox
 
-    def _iou(self, pbox, gbox, anchor, downsample):
-        b = pbox.shape[0]
-        pbox = decode_yolo(pbox, anchor, downsample)
-        pbox = pbox.reshape((b, -1, 4))
-        gbox = decode_yolo(gbox, anchor, downsample)
-        gbox = gbox.reshape((b, -1, 4))
-        pbox = xywh2xyxy(pbox)
-        gbox = xywh2xyxy(gbox)
-        iou = bbox_iou(
-            pbox, gbox, giou=self.giou, diou=self.diou, ciou=self.ciou)
-        return iou
+    def bbox_transfrom(self, box, anchor, downsample, scale_x_y=1.0,
+                       is_gt=True):
+        b = box.shape[0]
+        box = decode_yolo(box, anchor, downsample, scale_x_y, is_gt=is_gt)
+        box = box.reshape((b, -1, 4))
+        box = xywh2xyxy(box)
+        return box
+
+    # def _iou(self, pbox, gbox, anchor, downsample):
+    #     b = pbox.shape[0]
+    #     pbox = decode_yolo(pbox, anchor, downsample)
+    #     pbox = pbox.reshape((b, -1, 4))
+    #     gbox = decode_yolo(gbox, anchor, downsample)
+    #     gbox = gbox.reshape((b, -1, 4))
+    #     pbox = xywh2xyxy(pbox)
+    #     gbox = xywh2xyxy(gbox)
+    #     print('pbox.stop_gradient:', pbox.stop_gradient)
+    #     print('gbox.stop_gradient:', gbox.stop_gradient)
+    #     iou = bbox_iou(
+    #         pbox, gbox, giou=self.giou, diou=self.diou, ciou=self.ciou)
+    #     return iou
