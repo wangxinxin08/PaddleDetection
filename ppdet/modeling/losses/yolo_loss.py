@@ -185,7 +185,9 @@ class YOLOv3Loss(object):
                                           scale_x_y)
                 loss_iou = loss_iou * tscale_tobj
                 loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
-                loss_ious.append(fluid.layers.reduce_mean(loss_iou))
+                loss_iou_mean = fluid.layers.reduce_mean(loss_iou)
+                # fluid.layers.Print(loss_iou_mean)
+                loss_ious.append(loss_iou_mean)
 
             if self._iou_aware_loss is not None:
                 loss_iou_aware = self._iou_aware_loss(

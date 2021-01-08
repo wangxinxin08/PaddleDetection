@@ -79,7 +79,12 @@ class IouLoss(object):
                                     batch_size, False, scale_x_y, eps)
         gt = self._bbox_transform(tx, ty, tw, th, anchors, downsample_ratio,
                                   batch_size, True, scale_x_y, eps)
+        # fluid.layers.Print(pred[0])
+        # fluid.layers.Print(pred[1])
+        # fluid.layers.Print(pred[2])
+        fluid.layers.Print(pred[3])
         iouk = self._iou(pred, gt, ioup, eps)
+        # fluid.layers.Print(iouk)
         if self.loss_square:
             loss_iou = 1. - iouk * iouk
         else:

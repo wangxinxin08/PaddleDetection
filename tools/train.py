@@ -257,7 +257,33 @@ def main():
         # conv0
         # extra_keys = ['leaky_relu_0.tmp_0', 'leaky_relu_8.tmp_0', 'leaky_relu_15.tmp_0']
         # pre_conv0
-        extra_keys = ['concat_0.tmp_0', 'concat_6.tmp_0', 'concat_11.tmp_0']
+        # extra_keys = ['concat_0.tmp_0', 'concat_6.tmp_0', 'concat_11.tmp_0']
+        # grad
+        # extra_keys = ['conv1_1_weights@GRAD', 'res5c_branch2c_weights@GRAD']
+        # grad
+        extra_keys = []
+        save_keys = []
+        for i in range(3):
+            extra_keys += [
+                'yolo_output.{}.conv.weights@GRAD'.format(i),
+                'yolo_output.{}.conv.bias@GRAD'.format(i)
+            ]
+            save_keys += [
+                'yolo_output.{}.conv.weights@GRAD'.format(i),
+                'yolo_output.{}.conv.bias@GRAD'.format(i)
+            ]
+        extra_keys += ['tmp_181', 'tmp_373', 'tmp_565']
+        save_keys += ['iou_0', 'iou_1', 'iou_2']
+        # extra_keys += ['mean_0.tmp_0@GRAD', 'mean_6.tmp_0@GRAD', 'mean_12.tmp_0@GRAD']
+        # save_keys += ['loss_iou_0@GRAD', 'loss_iou_1@GRAD', 'loss_iou_2@GRAD']
+        # extra_keys += ['tmp_144@GRAD', 'tmp_336@GRAD', 'tmp_528@GRAD']
+        # save_keys += ['x1_0@GRAD', 'x1_1@GRAD', 'x1_2@GRAD']
+        # extra_keys += ['tmp_146@GRAD', 'tmp_338@GRAD', 'tmp_530@GRAD']
+        # save_keys += ['y1_0@GRAD', 'y1_1@GRAD', 'y1_2@GRAD']
+        # extra_keys += ['tmp_148@GRAD', 'tmp_340@GRAD', 'tmp_532@GRAD']
+        # save_keys += ['x2_0@GRAD', 'x2_1@GRAD', 'x2_2@GRAD']
+        # extra_keys += ['tmp_150@GRAD', 'tmp_342@GRAD', 'tmp_534@GRAD']
+        # save_keys += ['y2_0@GRAD', 'y2_1@GRAD', 'y2_2@GRAD']
         nk = len(extra_keys)
         outs = exe.run(compiled_train_prog,
                        fetch_list=train_values + extra_keys)
@@ -265,14 +291,23 @@ def main():
             k: np.array(v).mean()
             for k, v in zip(train_keys, outs[:-nk - 1])
         }
-        res = {k: (np.array(v)) for k, v in zip(extra_keys, outs[-nk:])}
+        res = {k: (np.array(v), ) for k, v in zip(extra_keys, outs[-nk:])}
         for i, k in enumerate(extra_keys):
             # np.save('output.{}.npy'.format(i), res[k][0])
             # np.save('res{}.npy'.format(nk - i - 1), res[k][0])
             # np.save('route{}.npy'.format(i), res[k][0])
             # np.save('conv2.{}.npy'.format(i), res[k][0])
             # np.save('conv0.{}.npy'.format(i), res[k][0])
-            np.save('pre_conv0.{}.npy'.format(i), res[k][0])
+            # np.save('pre_conv0.{}.npy'.format(i), res[k][0])
+            if '@GRAD' in save_keys[i]:
+                path = os.path.join('grad', '{}_{}.npy'.format(save_keys[i],
+                                                               it))
+            else:
+                path = os.path.join('grad', '{}.npy'.format(save_keys[i]))
+            np.save(path, res[k][0])
+            # print(k, i, res[k][0].shape)
+            # path = os.path.join('grad', 'iou_{}.npy'.format(i))
+            # np.save(path, res[k][0])
 
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
@@ -342,6 +377,8 @@ def main():
 
 
 if __name__ == '__main__':
+    import paddle
+    paddle.enable_static()
     parser = ArgsParser()
     parser.add_argument(
         "-r",
