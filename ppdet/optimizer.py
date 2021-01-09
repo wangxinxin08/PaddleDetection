@@ -17,6 +17,7 @@ from __future__ import division
 from __future__ import print_function
 
 import math
+import numpy as np
 import logging
 
 from paddle import fluid
@@ -197,7 +198,7 @@ class OneCycleLR(object):
 
         lr = fluid.layers.create_global_var(
             shape=[1],
-            value=float(learning_rate),
+            value=float(base_lr),
             dtype='float32',
             persistable=True,
             name="learning_rate")
@@ -218,7 +219,7 @@ class OneCycleLR(object):
         def decay_lr():
             return annealing_cos(base_lr, decay_end_lr,
                                  (global_step - warmup_step_var) /
-                                 (total_step - warmup_step))
+                                 (self.total_step - warmup_step))
 
         lr = fluid.layers.case(pred_fn_pairs=[(warmup_pred, warmup_lr),
                                               (decay_pred, decay_lr)])
