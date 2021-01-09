@@ -1,6 +1,6 @@
 architecture: YOLOv3
 use_gpu: true
-max_iters: 250000
+max_iters: 50000
 log_smooth_window: 100
 log_iter: 100
 save_dir: output
@@ -57,7 +57,7 @@ IouLoss:
   loss_weight: 2.5
   max_height: 608
   max_width: 608
-  ciou_term: true
+  # ciou_term: true
 
 IouAwareLoss:
   loss_weight: 1.0
@@ -74,14 +74,11 @@ MatrixNMS:
 LearningRate:
   base_lr: 0.005
   schedulers:
-  - !PiecewiseDecay
-    gamma: 0.1
-    milestones:
-    - 150000
-    - 200000
-  - !LinearWarmup
-    start_factor: 0.
-    steps: 4000
+  - !OneCycleLR
+    warmup_factor: 0.0
+    warmup_step: 4000
+    decay_factor: 0.01
+    total_step: 50000
 
 OptimizerBuilder:
   clip_grad_by_norm: 35.
