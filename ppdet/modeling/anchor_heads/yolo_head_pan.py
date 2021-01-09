@@ -194,15 +194,15 @@ class YOLOv3HeadPAN(object):
         if act == 'leaky':
             out = fluid.layers.leaky_relu(x=out, alpha=0.1)
         elif act == 'mish':
-            out = self._mish(out)
+            out = fluid.layers.mish(out)
         return out
 
     def _softplus(self, input):
         expf = fluid.layers.exp(input)
         return fluid.layers.log(1 + expf)
 
-    def _mish(self, input):
-        return input * fluid.layers.tanh(self._softplus(input))
+    # def _mish(self, input):
+    #     return input * fluid.layers.tanh(self._softplus(input))
 
     def _spp_module(self, input, name=""):
         output1 = input
@@ -236,12 +236,13 @@ class YOLOv3HeadPAN(object):
                    ch_list=[512, 1024, 512],
                    filter_list=[1, 3, 1],
                    stride=1,
+                   is_test=True,
                    name=None):
         conv = input
         for i, (ch_out, f_size) in enumerate(zip(ch_list, filter_list)):
             padding = 1 if f_size == 3 else 0
             conv = self._conv_bn(
-                conv, 
+                conv,
                 ch_out=ch_out,
                 filter_size=f_size,
                 stride=stride,
@@ -253,18 +254,25 @@ class YOLOv3HeadPAN(object):
             if i == 2:
                 residual = conv
                 conv = fluid.layers.elementwise_add(
-                    x=short,
-                    y=residual,
-                    name='{}.{}.add'.format(name, 1))
+                    x=short, y=residual, name='{}.{}.add'.format(name, 1))
                 short = conv
         residual = conv
         conv = fluid.layers.elementwise_add(
-            x=short,
-            y=residual,
-            name='{}.{}.add'.format(name, 2))
+            x=short, y=residual, name='{}.{}.add'.format(name, 2))
+        if self.drop_block:
+            conv = DropBlock(
+                conv,
+                block_size=self.block_size,
+                keep_prob=self.keep_prob,
+                is_test=is_test)
         return conv
-    
-    def spp_module(self, input, channel=512, conv_block_num=2, is_test=True, name=None):
+
+    def spp_module(self,
+                   input,
+                   channel=512,
+                   conv_block_num=2,
+                   is_test=True,
+                   name=None):
         conv = input
         for j in range(conv_block_num):
             conv = self._conv_bn(
@@ -280,9 +288,7 @@ class YOLOv3HeadPAN(object):
             if j == 1:
                 residual = conv
                 conv = fluid.layers.elementwise_add(
-                    x=short,
-                    y=residual,
-                    name='{}.{}.add'.format(name, 1))
+                    x=short, y=residual, name='{}.{}.add'.format(name, 1))
                 conv = self._spp_module(conv, name="spp")
                 conv = self._conv_bn(
                     conv,
@@ -312,25 +318,30 @@ class YOLOv3HeadPAN(object):
             name='{}.2'.format(name))
         residual = conv
         conv = fluid.layers.elementwise_add(
-            x=short,
-            y=residual,
-            name='{}.{}.add'.format(name, 2))
+            x=short, y=residual, name='{}.{}.add'.format(name, 2))
+        if self.drop_block:
+            conv = DropBlock(
+                conv,
+                block_size=self.block_size,
+                keep_prob=self.keep_prob,
+                is_test=is_test)
         return conv
 
-    def pan_module(self, input, filter_list, name=None):
+    def pan_module(self, input, filter_list, is_test=True, name=None):
         for i in range(1, len(input)):
             conv_left = input[i]
-             # ch_out = input[i].shape[1] // 4
-             # conv_left = self._conv_bn(
-             #   input[i],
-             #   ch_out=ch_out,
-             #   filter_size=1,
-             #   stride=1,
-             #   padding=0,
-             #   name=name+'.{}.left'.format(i))
+            # ch_out = input[i].shape[1] // 4
+            # conv_left = self._conv_bn(
+            #   input[i],
+            #   ch_out=ch_out,
+            #   filter_size=1,
+            #   stride=1,
+            #   padding=0,
+            #   name=name+'.{}.left'.format(i))
             ch_out = input[i - 1].shape[1] // 2
+            conv_right = self._add_coord(input[i - 1], is_test=is_test)
             conv_right = self._conv_bn(
-                input[i - 1],
+                conv_right,
                 ch_out=ch_out,
                 filter_size=1,
                 stride=1,
@@ -344,6 +355,7 @@ class YOLOv3HeadPAN(object):
                 pan_out,
                 ch_list=ch_list,
                 filter_list=filter_list,
+                is_test=is_test,
                 name=name + '.stack_conv.{}'.format(i))
         return input
 
@@ -392,22 +404,29 @@ class YOLOv3HeadPAN(object):
         blocks = input[-1:-out_layer_num - 1:-1]
         # SPP needs to be modified
         blocks[spp_stage] = self.spp_module(
-            blocks[spp_stage], name=self.prefix_name + "spp_module")
+            blocks[spp_stage],
+            is_test=(not is_train),
+            name=self.prefix_name + "spp_module")
         blocks = self.pan_module(
-            blocks, filter_list=filter_list,name=self.prefix_name + "pan_module")
+            blocks,
+            filter_list=filter_list,
+            is_test=(not is_train),
+            name=self.prefix_name + "pan_module")
 
         # whether add reverse
         # reverse order back to input
         blocks = blocks[::-1]
-        
+
         # first block should be 19x19
         route = None
         for i, block in enumerate(blocks):
             if i > 0:  # perform concat in first 2 detection_block
                 # downsample
+                ch_in = route.shape[1]
+                route = self._add_coord(route, is_test=(not is_train))
                 route = self._conv_bn(
                     route,
-                    ch_out=route.shape[1] * 2,
+                    ch_out=ch_in * 2,
                     filter_size=3,
                     stride=2,
                     padding=1,
@@ -419,9 +438,12 @@ class YOLOv3HeadPAN(object):
                     block,
                     ch_list=ch_list,
                     filter_list=filter_list,
-                    name=self.prefix_name + 'yolo_block.stack_conv.{}'.format(i))
+                    is_test=(not is_train),
+                    name=self.prefix_name +
+                    'yolo_block.stack_conv.{}'.format(i))
             route = block
 
+            block = self._add_coord(block, is_test=(not is_train))
             block_out = self._conv_bn(
                 block,
                 ch_out=block.shape[1] * 2,
