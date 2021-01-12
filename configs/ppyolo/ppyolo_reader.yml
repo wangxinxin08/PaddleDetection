@@ -5,7 +5,7 @@ TrainReader:
   dataset:
     !COCODataSet
       image_dir: train2017
-      anno_path: annotations/instances_minitrain2017.json
+      anno_path: annotations/instances_train2017.json
       dataset_dir: dataset/coco
       with_background: false
   sample_transforms:
@@ -27,7 +27,7 @@ TrainReader:
     - !BboxXYXY2XYWH {}
   batch_transforms:
   - !RandomShape
-    sizes: [320, 352, 384, 416, 448, 480, 512, 544, 576, 608]
+    sizes: [320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640]
     random_inter: True
   - !NormalizeImage
     mean: [0.485, 0.456, 0.406]
@@ -46,7 +46,7 @@ TrainReader:
               [30, 61], [62, 45], [59, 119],
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
-  batch_size: 12
+  batch_size: 24
   shuffle: true
   mixup_epoch: 25000
   drop_last: true
@@ -68,7 +68,7 @@ EvalReader:
     - !DecodeImage
       to_rgb: True
     - !ResizeImage
-      target_size: 608
+      target_size: 640
       interp: 2
     - !NormalizeImage
       mean: [0.485, 0.456, 0.406]
@@ -87,7 +87,7 @@ EvalReader:
 
 TestReader:
   inputs_def:
-    image_shape: [3, 608, 608]
+    image_shape: [3, 640, 640]
     fields: ['image', 'im_size', 'im_id']
   dataset:
     !ImageFolder
@@ -97,7 +97,7 @@ TestReader:
     - !DecodeImage
       to_rgb: True
     - !ResizeImage
-      target_size: 608
+      target_size: 640
       interp: 2
     - !NormalizeImage
       mean: [0.485, 0.456, 0.406]

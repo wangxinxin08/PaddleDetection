@@ -1,10 +1,10 @@
 architecture: YOLOv3
 use_gpu: true
-max_iters: 90000
+max_iters: 450000
 log_smooth_window: 100
 log_iter: 100
 save_dir: output
-snapshot_iter: 2000
+snapshot_iter: 10000
 metric: COCO
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/ResNet50_vd_ssld_pretrained.tar
 weights: output/ppyolo_full/model_final
@@ -55,14 +55,15 @@ YOLOv3Loss:
 
 IouLoss:
   loss_weight: 2.5
-  max_height: 608
-  max_width: 608
+  max_height: 640
+  max_width: 640
   ciou_term: true
 
 IouAwareLoss:
   loss_weight: 1.0
-  max_height: 608
-  max_width: 608
+  max_height: 640
+  max_width: 640
+  ciou_term: true
 
 MatrixNMS:
     background_label: -1
@@ -77,7 +78,7 @@ LearningRate:
   - !PiecewiseDecay
     gamma: 0.1
     milestones:
-    - 60000
+    - 300000
   - !LinearWarmup
     start_factor: 0.
     steps: 4000
