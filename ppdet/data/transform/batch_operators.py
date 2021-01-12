@@ -372,6 +372,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
             featmap_sizes = [(int(h/downsample_ratio), int(h/downsample_ratio)) for downsample_ratio in self.downsample_ratios]
             anchor_list = base_anchors.grid_anchors(featmap_sizes)
             anchors = np.concatenate((anchor_list[0],anchor_list[1],anchor_list[2]))
+            num_level_bboxes = [len(anchor_list[0]),len(anchor_list[1]),len(anchor_list[2])]
             length = [anchor_list[i].shape[0] for i in range(3)]
             gt_bbox_filted = gt_bbox[(gt_bbox != 0).any(axis=1)]
             bboxes = gt_bbox_filted.copy()
@@ -384,10 +385,10 @@ class Gt2YoloTarget_1vN(BaseOperator):
             #assigner = TopK_Assigner(anchors=anchors,
                                         #gts=bboxes,
                                         #k=1)
-            assigner = Max_IoU_Assigner(anchors=anchors,
-                                            gts=bboxes,
-                                            pos_thr=0.5,
-                                            neg_thr=0.5)
+            assigner = ATSS_Assigner(anchors=anchors,
+                                    gts=bboxes,
+                                    num_level_bboxes=num_level_bboxes,
+                                    topk=9)
             assigned_result = assigner.assign()
             pos_idx = assigned_result>=0
             gt_bboxes = bboxes[assigned_result]
@@ -949,31 +950,53 @@ class YOLOAnchorGenerator(object):
         # then (0, 1), (0, 2), ...
         return all_anchors
 
-class Max_IoU_Assigner(object):
+class ATSS_Assigner(object):
     def __init__(self,
                  anchors,
                  gts,
-                 pos_thr,
-                 neg_thr):
-        super(Max_IoU_Assigner, self).__init__()
+                 num_level_bboxes,
+                 topk):
+        super(ATSS_Assigner, self).__init__()
         self.anchors = anchors
         self.gts = gts
-        self.pos_thr = pos_thr
-        self.neg_thr = neg_thr
+        self.num_level_bboxes = num_level_bboxes
+        self.topk = topk
     
     def assign(self):
+        distances = self.center_distance(self.gts, self.anchors)
+        overlaps = self.overlap_matrix(self.gts, self.anchors)
+        candidate_idxs = []
+        start_idx = 0
+        for level, bboxes_per_level in enumerate(self.num_level_bboxes):
+            # on each pyramid level, for each gt,
+            # select k bbox whose center are closest to the gt center
+            end_idx = start_idx + bboxes_per_level
+            distances_per_level = distances[:, start_idx:end_idx]
+            selectable_k = min(self.topk, bboxes_per_level)
+            topk_idxs_per_level = np.argpartition(distances_per_level, selectable_k, axis=1)[:, 0:selectable_k]
+            candidate_idxs.append(topk_idxs_per_level + start_idx)
+            start_idx = end_idx
+        candidate_idxs = np.concatenate(candidate_idxs, axis=1)
+        #print(distances.shape)
+        #print(candidate_idxs.shape)
+        candidate_overlaps = np.zeros(candidate_idxs.shape)
+        for i in range(overlaps.shape[0]):
+            candidate_overlaps[i] = overlaps[i][candidate_idxs[i]]
+        #candidate_overlaps = overlaps[candidate_idxs, np.arange(len(self.gts))]
+        overlaps_mean_per_gt = np.mean(candidate_overlaps,axis=0)
+        overlaps_std_per_gt = np.std(candidate_overlaps,axis=0)
+        overlaps_thr_per_gt = overlaps_mean_per_gt + overlaps_std_per_gt
+        is_pos = candidate_overlaps >= overlaps_thr_per_gt[None, :]
+        
+        overlaps_inf = np.zeros(overlaps.shape).T.reshape(-1)-500
+        index = candidate_idxs.reshape(-1)[is_pos.reshape(-1)]
+        overlaps_inf[index] = overlaps.T.reshape(-1)[index]
+        overlaps_inf = overlaps_inf.reshape(len(self.gts), -1).T
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
-        overlaps = self.overlap_matrix(self.gts, self.anchors)
-        max_overlaps = overlaps.max(axis=0)
-        #print("max_overlaps.shape:", max_overlaps.shape)
-        #print("assigned_gt_inds.shape:", assigned_gt_inds.shape)
-        argmax_overlaps = overlaps.argmax(axis=0)
-        # assign negatives
-        assigned_gt_inds[np.logical_and(max_overlaps >= 0, max_overlaps < self.neg_thr)] = -1
-        # assign positives
-        pos_inds = max_overlaps >= self.pos_thr
-        assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds]
+        max_overlaps = overlaps_inf.max(axis=1)
+        argmax_overlaps = overlaps_inf.argmax(axis=1)
+        assigned_gt_inds[max_overlaps != -500] = argmax_overlaps[max_overlaps != -500] 
         return assigned_gt_inds
 
     def overlap_matrix(self, bbox, gt):
@@ -986,6 +1009,14 @@ class Max_IoU_Assigner(object):
         unioun_areas = box_areas[:, None] + gt_areas - inter_areas
         IoU = np.divide(inter_areas, unioun_areas, out=np.zeros_like(inter_areas), where=unioun_areas!=0) 
         return IoU
+    
+    def center_distance(self, bbox, gt):
+        center_x1 = (bbox[:, 2:3] + bbox[:, 0:1]) / 2 
+        center_y1 = (bbox[:, 3:4] + bbox[:, 1:2]) / 2 
+        center_x2 = (gt[:, 2:3] + gt[:, 0:1]) / 2
+        center_y2 = (gt[:, 3:4] + gt[:, 1:2]) / 2
+        center_distance = np.power(center_x1-center_x2.T,2)+np.power(center_y1-center_y2.T,2)
+        return center_distance
 
 class TopK_Assigner(object):
     def __init__(self,
@@ -1038,7 +1069,7 @@ class TopK_Assigner(object):
         center_distance = abs(center_x1-center_x2.T)+abs(center_y1-center_y2.T)+5
         close = 1 / center_distance
         return IoU+close
-        
+
     def diou_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
         rb = np.minimum(bbox[:, None, 2:], gt[:, 2:])  # right_bottom (x, y)
