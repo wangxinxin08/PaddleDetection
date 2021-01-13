@@ -292,6 +292,84 @@ class Gt2YoloTarget(BaseOperator):
 
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
+
+                for b in range(gt_bbox.shape[0]):
+                    gx, gy, gw, gh = gt_bbox[b, :]
+                    cls = gt_class[b]
+                    score = gt_score[b]
+                    if gw <= 0. or gh <= 0. or score <= 0.:
+                        continue
+
+                    # find best match anchor index
+                    best_iou = 0.
+                    best_idx = -1
+                    for an_idx in range(an_hw.shape[0]):
+                        iou = jaccard_overlap(
+                            [0., 0., gw, gh],
+                            [0., 0., an_hw[an_idx, 0], an_hw[an_idx, 1]])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = an_idx
+
+                    gi = int(gx * grid_w)
+                    gj = int(gy * grid_h)
+
+                    # gtbox should be regresed in this layes if best match 
+                    # anchor index in anchor mask of this layer
+                    for (scale_i, scale_j) in [(-1, -1), (-1, 0), (-1, 1),
+                                               (0, -1), (0, 1), (1, -1), (1, 0),
+                                               (1, 1)]:
+                        scale_gi = gi + scale_i
+                        scale_gj = gj + scale_j
+                        if scale_gi < 0 or scale_gi >= grid_w or \
+                                scale_gj < 0 or scale_gj >= grid_h:
+                            continue
+                        score_factor = 1. / (2**(abs(scale_i) + abs(scale_j)))
+                        if best_idx in mask:
+                            best_n = mask.index(best_idx)
+
+                            # x, y, w, h, scale
+                            if target[best_n, 5, scale_gj, scale_gi] == 0.:
+                                print('9cell')
+                                target[best_n, 0, scale_gj,
+                                       scale_gi] = gx * grid_w - gi
+                                target[best_n, 1, scale_gj,
+                                       scale_gi] = gy * grid_h - gj
+                                target[best_n, 2, scale_gj, scale_gi] = np.log(
+                                    gw * w / self.anchors[best_idx][0])
+                                target[best_n, 3, scale_gj, scale_gi] = np.log(
+                                    gh * h / self.anchors[best_idx][1])
+                                target[best_n, 4, scale_gj,
+                                       scale_gi] = 2.0 - gw * gh
+
+                                # objectness record gt_score
+                                target[best_n, 5, scale_gj, scale_gi] = score
+
+                                # classification
+                                target[best_n, 6 + cls, scale_gj, scale_gi] = 1.
+                            else:
+                                if (abs(gx * grid_w - gi) + abs(gy * grid_h - gj)) < \
+                                    (abs(target[best_n, 0, scale_gj, scale_gi]) + abs(target[best_n, 1, scale_gj, scale_gi])):
+                                    target[best_n, 0, scale_gj,
+                                           scale_gi] = gx * grid_w - gi
+                                    target[best_n, 1, scale_gj,
+                                           scale_gi] = gy * grid_h - gj
+                                    target[
+                                        best_n, 2, scale_gj, scale_gi] = np.log(
+                                            gw * w / self.anchors[best_idx][0])
+                                    target[
+                                        best_n, 3, scale_gj, scale_gi] = np.log(
+                                            gh * h / self.anchors[best_idx][1])
+                                    target[best_n, 4, scale_gj,
+                                           scale_gi] = 2.0 - gw * gh
+
+                                    # objectness record gt_score
+                                    target[best_n, 5, scale_gj,
+                                           scale_gi] = score
+
+                                    # classification
+                                    target[best_n, 6 + cls, scale_gj,
+                                           scale_gi] = 1.
                 sample['target{}'.format(i)] = target
         return samples
 
