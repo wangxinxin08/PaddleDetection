@@ -330,7 +330,6 @@ class Gt2YoloTarget(BaseOperator):
 
                             # x, y, w, h, scale
                             if target[best_n, 5, scale_gj, scale_gi] == 0.:
-                                print('9cell')
                                 target[best_n, 0, scale_gj,
                                        scale_gi] = gx * grid_w - gi
                                 target[best_n, 1, scale_gj,
@@ -350,6 +349,13 @@ class Gt2YoloTarget(BaseOperator):
                             else:
                                 if (abs(gx * grid_w - gi) + abs(gy * grid_h - gj)) < \
                                     (abs(target[best_n, 0, scale_gj, scale_gi]) + abs(target[best_n, 1, scale_gj, scale_gi])):
+                                    an_x, an_y = scale_gi + 0.5, scale_gj + 0.5
+                                    iou = jaccard_overlap([gx, gy, gw, gh], [
+                                        an_x, an_y, an_hw[best_idx, 0],
+                                        an_hw[best_idx, 1]
+                                    ])
+                                    if iou < 0.45:
+                                        continue
                                     target[best_n, 0, scale_gj,
                                            scale_gi] = gx * grid_w - gi
                                     target[best_n, 1, scale_gj,
@@ -365,7 +371,7 @@ class Gt2YoloTarget(BaseOperator):
 
                                     # objectness record gt_score
                                     target[best_n, 5, scale_gj,
-                                           scale_gi] = score
+                                           scale_gi] = score * iou
 
                                     # classification
                                     target[best_n, 6 + cls, scale_gj,
