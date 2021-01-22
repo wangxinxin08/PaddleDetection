@@ -44,6 +44,7 @@ class IouLoss(object):
                  max_height=608,
                  max_width=608,
                  ciou_term=False,
+                 eiou_term=False,
                  loss_square=True):
         self._loss_weight = loss_weight
         self._MAX_HI = max_height
@@ -108,7 +109,44 @@ class IouLoss(object):
         if self.ciou_term:
             ciou = self.get_ciou_term(pred, gt, iouk, eps)
             iouk = iouk - ciou
+        if self.eiou_term:
+            eiou = self.get_eiou_term(pred, gt, eps)
+            iouk = iouk - eiou
         return iouk
+
+    def get_eiou_term(self, pred, gt, eps):
+        x1, y1, x2, y2 = pred
+        x1g, y1g, x2g, y2g = gt
+
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        w = x2 - x1
+        h = y2 - y1
+
+        cxg = (x1g + x2g) / 2
+        cyg = (y1g + y2g) / 2
+        wg = x2g - x1g
+        hg = y2g - y1g
+
+        # A or B
+        xc1 = fluid.layers.elementwise_min(x1, x1g)
+        yc1 = fluid.layers.elementwise_min(y1, y1g)
+        xc2 = fluid.layers.elementwise_max(x2, x2g)
+        yc2 = fluid.layers.elementwise_max(y2, y2g)
+
+        wc = xc2 - xc1
+        hc = yc2 - yc1
+
+        # DIOU term
+        dist_intersection = (cx - cxg) * (cx - cxg) + (cy - cyg) * (cy - cyg)
+        dist_union = (xc2 - xc1) * (xc2 - xc1) + (yc2 - yc1) * (yc2 - yc1)
+        diou_term = (dist_intersection + eps) / (dist_union + eps)
+
+        # EIOU term
+        eiou_term = (wg - w) * (wg - w) / (wc * wc + eps) + (hg - h) * (
+            hg - h) / (hc * hc + eps)
+
+        return diou_term + eiou_term
 
     def get_ciou_term(self, pred, gt, iouk, eps):
         x1, y1, x2, y2 = pred

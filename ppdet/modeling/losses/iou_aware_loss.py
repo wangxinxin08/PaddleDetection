@@ -41,12 +41,14 @@ class IouAwareLoss(IouLoss):
                  loss_weight=1.0,
                  max_height=608,
                  max_width=608,
-                 ciou_term=False):
+                 ciou_term=False,
+                 eiou_term=False):
         super(IouAwareLoss, self).__init__(
             loss_weight=loss_weight,
             max_height=max_height,
             max_width=max_width,
-            ciou_term=ciou_term)
+            ciou_term=ciou_term,
+            eiou_term=eiou_term)
 
     def __call__(self,
                  ioup,
