@@ -237,6 +237,18 @@ class Gt2YoloTarget(BaseOperator):
                     if gw <= 0. or gh <= 0. or score <= 0.:
                         continue
 
+                    best_iou = 0.
+                    best_idx = -1
+                    for an_idx in range(an_hw.shape[0]):
+                        iou = jaccard_overlap(
+                            [0., 0., gw, gh],
+                            [0., 0., an_hw[an_idx, 0], an_hw[an_idx, 1]])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = an_idx
+
+                    gi = int(gx * grid_w)
+                    gj = int(gy * grid_h)
                     # find best match anchor index
                     best_iou = 0.
                     best_idx = -1
@@ -271,33 +283,79 @@ class Gt2YoloTarget(BaseOperator):
                         # classification
                         target[best_n, 6 + cls, gj, gi] = 1.
 
-                    # For non-matched anchors, calculate the target if the iou 
-                    # between anchor and gt is larger than iou_thresh
-                    if self.iou_thresh < 1:
-                        for idx, mask_i in enumerate(mask):
-                            if mask_i == best_idx: continue
-                            iou = jaccard_overlap(
-                                [0., 0., gw, gh],
-                                [0., 0., an_hw[mask_i, 0], an_hw[mask_i, 1]])
-                            if iou > self.iou_thresh:
+                for b in range(gt_bbox.shape[0]):
+                    gx, gy, gw, gh = gt_bbox[b, :]
+                    cls = gt_class[b]
+                    score = gt_score[b]
+                    if gw <= 0. or gh <= 0. or score <= 0.:
+                        continue
+
+                    best_iou = 0.
+                    best_idx = -1
+                    for an_idx in range(an_hw.shape[0]):
+                        iou = jaccard_overlap(
+                            [0., 0., gw, gh],
+                            [0., 0., an_hw[an_idx, 0], an_hw[an_idx, 1]])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = an_idx
+
+                    gi = int(gx * grid_w)
+                    gj = int(gy * grid_h)
+
+                    # gtbox should be regresed in this layes if best match 
+                    # anchor index in anchor mask of this layer
+                    if best_idx in mask:
+                        best_n = mask.index(best_idx)
+
+                        # x, y, w, h, scale
+                        target[best_n, 0, gj, gi] = gx * grid_w - gi
+                        target[best_n, 1, gj, gi] = gy * grid_h - gj
+                        target[best_n, 2, gj, gi] = np.log(
+                            gw * w / self.anchors[best_idx][0])
+                        target[best_n, 3, gj, gi] = np.log(
+                            gh * h / self.anchors[best_idx][1])
+                        target[best_n, 4, gj, gi] = 2.0 - gw * gh
+
+                        # objectness record gt_score
+                        target[best_n, 5, gj, gi] = score
+
+                        # classification
+                        target[best_n, 6 + cls, gj, gi] = 1.
+
+                    for scale_i in [-1, 0, 1]:
+                        for scale_j in [-1, 0, 1]:
+                            if scale_i == 0 and scale_j == 0:
+                                continue
+                            scale_gi = gi + scale_i
+                            scale_gj = gj + scale_j
+                            if scale_gi < 0 or scale_gi >= grid_w or \
+                                    scale_gj < 0 or scale_gj >= grid_h:
+                                continue
+                            score_factor = 1. / (2 ** (abs(scale_i) + abs(scale_j)))
+
+                            # gtbox should be regresed in this layes if best match 
+                            # anchor index in anchor mask of this layer
+                            if best_idx in mask:
+                                best_n = mask.index(best_idx)
+
+                                if target[best_n, 5, scale_gj, scale_gi] == 0:
                                 # x, y, w, h, scale
-                                target[idx, 0, gj, gi] = gx * grid_w - gi
-                                target[idx, 1, gj, gi] = gy * grid_h - gj
-                                target[idx, 2, gj, gi] = np.log(
-                                    gw * w / self.anchors[mask_i][0])
-                                target[idx, 3, gj, gi] = np.log(
-                                    gh * h / self.anchors[mask_i][1])
-                                target[idx, 4, gj, gi] = 2.0 - gw * gh
+                                    target[best_n, 0, scale_gj, scale_gi] = gx * grid_w - scale_gi
+                                    target[best_n, 1, scale_gj, scale_gi] = gy * grid_h - scale_gj
+                                    target[best_n, 2, scale_gj, scale_gi] = np.log(
+                                        gw * w / self.anchors[best_idx][0])
+                                    target[best_n, 3, scale_gj, scale_gi] = np.log(
+                                        gh * h / self.anchors[best_idx][1])
+                                    target[best_n, 4, scale_gj, scale_gi] = 2.0 - gw * gh
 
-                                # objectness record gt_score
-                                target[idx, 5, gj, gi] = score
+                                    # objectness record gt_score
+                                    target[best_n, 5, scale_gj, scale_gi] = score * score_factor
 
-                                # classification
-                                target[idx, 6 + cls, gj, gi] = 1.
+                                    # classification
+                                    target[best_n, 6 + cls, scale_gj, scale_gi] = 1.
                 #np.save('c_target{}'.format(i), target)
-                sample['target{}'.format(i)] = target
-        assert len(self.anchor_masks) != len(self.downsample_ratios), \
-            "end assigner"       
+                sample['target{}'.format(i)] = target   
         return samples
 
 @register_op
@@ -977,25 +1035,44 @@ class ATSS_Assigner(object):
             candidate_idxs.append(topk_idxs_per_level + start_idx)
             start_idx = end_idx
         candidate_idxs = np.concatenate(candidate_idxs, axis=1)
-        #print(distances.shape)
-        #print(candidate_idxs.shape)
         candidate_overlaps = np.zeros(candidate_idxs.shape)
         for i in range(overlaps.shape[0]):
-            candidate_overlaps[i] = overlaps[i][candidate_idxs[i]]
+            candidate_overlaps[i] = overlaps[i, candidate_idxs[i]]
         #candidate_overlaps = overlaps[candidate_idxs, np.arange(len(self.gts))]
         overlaps_mean_per_gt = np.mean(candidate_overlaps,axis=0)
         overlaps_std_per_gt = np.std(candidate_overlaps,axis=0)
         overlaps_thr_per_gt = overlaps_mean_per_gt + overlaps_std_per_gt
         is_pos = candidate_overlaps >= overlaps_thr_per_gt[None, :]
-        
-        overlaps_inf = np.zeros(overlaps.shape).T.reshape(-1)-500
-        index = candidate_idxs.reshape(-1)[is_pos.reshape(-1)]
-        overlaps_inf[index] = overlaps.T.reshape(-1)[index]
-        overlaps_inf = overlaps_inf.reshape(len(self.gts), -1).T
+
+        #InBox
+        num_bboxes = self.anchors.shape[0]
+        num_gt = self.gts.shape[0]
+        bboxes_cx = (self.anchors[:, 0] + self.anchors[:, 2]) / 2.0
+        bboxes_cy = (self.anchors[:, 1] + self.anchors[:, 3]) / 2.0
+        candidate_idxs_old = np.copy(candidate_idxs)
+        for gt_idx in range(num_gt):
+            candidate_idxs[gt_idx, :] += gt_idx * num_bboxes
+        #ep_bboxes_cx = bboxes_cx.reshape(1, -1).expand(num_gt, num_bboxes).reshape(-1)
+        ep_bboxes_cx = np.tile(bboxes_cx.reshape(1, -1),(num_gt,1)).reshape(-1)
+        #ep_bboxes_cy = bboxes_cy.reshape(1, -1).expand(num_gt, num_bboxes).reshape(-1)
+        ep_bboxes_cy = np.tile(bboxes_cy.reshape(1, -1),(num_gt,1)).reshape(-1)
+        candidate_idxs = candidate_idxs.reshape(-1)
+
+        # calculate the left, top, right, bottom distance between positive
+        # bbox center and gt side
+        l_ = ep_bboxes_cx[candidate_idxs].reshape(num_gt, -1) - self.gts[:, 0:1]
+        t_ = ep_bboxes_cy[candidate_idxs].reshape(num_gt, -1) - self.gts[:, 1:2]
+        r_ = self.gts[:, 2:3] - ep_bboxes_cx[candidate_idxs].reshape(num_gt, -1)
+        b_ = self.gts[:, 3:4] - ep_bboxes_cy[candidate_idxs].reshape(num_gt, -1)
+        is_in_gts = np.stack([l_, t_, r_, b_], axis=1).min(axis=1)[0] > 0.01
+        is_pos = is_pos & is_in_gts
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
-        max_overlaps = overlaps_inf.max(axis=1)
-        argmax_overlaps = overlaps_inf.argmax(axis=1)
+        overlaps_inf = np.zeros(overlaps.shape)-500
+        for i in range(overlaps_inf.shape[0]):
+            overlaps_inf[i][candidate_idxs_old[i][is_pos[i]]] = overlaps[i][candidate_idxs_old[i][is_pos[i]]]
+        max_overlaps = overlaps_inf.max(axis=0)
+        argmax_overlaps = overlaps_inf.argmax(axis=0)
         assigned_gt_inds[max_overlaps != -500] = argmax_overlaps[max_overlaps != -500] 
         return assigned_gt_inds
 
