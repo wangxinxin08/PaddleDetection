@@ -77,7 +77,8 @@ class YOLOv3HeadPAN(object):
                  weight_prefix_name='',
                  downsample=[32, 16, 8],
                  scale_x_y=1.0,
-                 clip_bbox=True):
+                 clip_bbox=True,
+                 vgg_block=False):
         check_version("1.8.4")
         self.conv_block_num = conv_block_num
         self.norm_decay = norm_decay
@@ -101,6 +102,7 @@ class YOLOv3HeadPAN(object):
         self.downsample = downsample
         self.scale_x_y = scale_x_y
         self.clip_bbox = clip_bbox
+        self.vgg_block = vgg_block
 
     def _create_tensor_from_numpy(self, numpy_array):
         paddle_array = fluid.layers.create_global_var(
@@ -195,6 +197,49 @@ class YOLOv3HeadPAN(object):
             out = fluid.layers.leaky_relu(x=out, alpha=0.1)
         elif act == 'mish':
             out = fluid.layers.mish(out)
+        elif act == 'silu':
+            out = out * fluid.layers.sigmoid(out)
+        return out
+
+    def repvggblock(self,
+                    input,
+                    ch_out,
+                    filter_size,
+                    stride,
+                    padding,
+                    act='leaky',
+                    name=None):
+        if not self.vgg_block or filter_size == 1:
+            return self._conv_bn(
+                input, ch_out, filter_size, stride, padding, act=act, name=name)
+
+        padding_1x1 = padding - kernel_size // 2
+        if input.shape[1] == ch_out and stride == 1:
+            bn_name = name + ".short.bn"
+            bn_param_attr = ParamAttr(
+                regularizer=L2Decay(self.norm_decay), name=bn_name + '.scale')
+            bn_bias_attr = ParamAttr(
+                regularizer=L2Decay(self.norm_decay), name=bn_name + '.offset')
+            short = fluid.layers.batch_norm(
+                input=input,
+                act=None,
+                param_attr=bn_param_attr,
+                bias_attr=bn_bias_attr,
+                moving_mean_name=bn_name + '.mean',
+                moving_variance_name=bn_name + '.var')
+        else:
+            short = 0
+        x1 = self._conv_bn(
+            input, ch_out, filter_size, stride, padding, act=None, name=name)
+        x2 = self._conv_bn(
+            input, ch_out, 1, stride, padding_1x1, act=None, name=name + '.1')
+        out = x1 + x2 + short
+        if act == 'leaky':
+            out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+        elif act == 'mish':
+            out = fluid.layers.mish(out)
+        elif act == 'silu':
+            out = out * fluid.layers.sigmoid(out)
         return out
 
     def _softplus(self, input):
@@ -241,7 +286,7 @@ class YOLOv3HeadPAN(object):
         conv = input
         for i, (ch_out, f_size) in enumerate(zip(ch_list, filter_list)):
             padding = 1 if f_size == 3 else 0
-            conv = self._conv_bn(
+            conv = self.repvggblock(
                 conv,
                 ch_out=ch_out,
                 filter_size=f_size,
@@ -275,7 +320,7 @@ class YOLOv3HeadPAN(object):
                    name=None):
         conv = input
         for j in range(conv_block_num):
-            conv = self._conv_bn(
+            conv = self.repvggblock(
                 conv,
                 channel,
                 filter_size=1,
@@ -290,7 +335,7 @@ class YOLOv3HeadPAN(object):
                 conv = fluid.layers.elementwise_add(
                     x=short, y=residual, name='{}.{}.add'.format(name, 1))
                 conv = self._spp_module(conv, name="spp")
-                conv = self._conv_bn(
+                conv = self.repvggblock(
                     conv,
                     512,
                     filter_size=1,
@@ -299,7 +344,7 @@ class YOLOv3HeadPAN(object):
                     act=self.act,
                     name='{}.{}.spp.conv'.format(name, j))
                 short = conv
-            conv = self._conv_bn(
+            conv = self.repvggblock(
                 conv,
                 channel * 2,
                 filter_size=3,
@@ -308,7 +353,7 @@ class YOLOv3HeadPAN(object):
                 act=self.act,
                 name='{}.{}.1'.format(name, j))
 
-        conv = self._conv_bn(
+        conv = self.repvggblock(
             conv,
             channel,
             filter_size=1,
@@ -340,7 +385,7 @@ class YOLOv3HeadPAN(object):
             #   name=name+'.{}.left'.format(i))
             ch_out = input[i - 1].shape[1] // 2
             conv_right = self._add_coord(input[i - 1], is_test=is_test)
-            conv_right = self._conv_bn(
+            conv_right = self.repvggblock(
                 conv_right,
                 ch_out=ch_out,
                 filter_size=1,
@@ -424,7 +469,7 @@ class YOLOv3HeadPAN(object):
                 # downsample
                 ch_in = route.shape[1]
                 route = self._add_coord(route, is_test=(not is_train))
-                route = self._conv_bn(
+                route = self.repvggblock(
                     route,
                     ch_out=ch_in * 2,
                     filter_size=3,
@@ -444,7 +489,7 @@ class YOLOv3HeadPAN(object):
             route = block
 
             block = self._add_coord(block, is_test=(not is_train))
-            block_out = self._conv_bn(
+            block_out = self.repvggblock(
                 block,
                 ch_out=block.shape[1] * 2,
                 filter_size=3,
