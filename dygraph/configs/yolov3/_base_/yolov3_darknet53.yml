@@ -1,6 +1,5 @@
 architecture: YOLOv3
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/DarkNet53_pretrained.tar
-use_fine_grained_loss: false
 load_static_weights: True
 norm_type: sync_bn
 
