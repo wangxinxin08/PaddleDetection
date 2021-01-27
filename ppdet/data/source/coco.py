@@ -127,7 +127,8 @@ class COCODataSet(DataSet):
             }
 
             if not self.load_image_only:
-                ins_anno_ids = coco.getAnnIds(imgIds=img_id, iscrowd=False)
+                #ins_anno_ids = coco.getAnnIds(imgIds=img_id, iscrowd=False)
+                ins_anno_ids = coco.getAnnIds(imgIds=img_id)
                 instances = coco.loadAnns(ins_anno_ids)
 
                 bboxes = []
@@ -161,7 +162,7 @@ class COCODataSet(DataSet):
                     is_crowd[i][0] = box['iscrowd']
                     if 'segmentation' in box:
                         gt_poly[i] = box['segmentation']
-
+                #print("is_crowd:", box['iscrowd'])
                 coco_rec.update({
                     'is_crowd': is_crowd,
                     'gt_class': gt_class,

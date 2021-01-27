@@ -72,17 +72,21 @@ class YOLOv3(object):
             gt_bbox = feed_vars['gt_bbox']
             gt_class = feed_vars['gt_class']
             gt_score = feed_vars['gt_score']
-
+            #print(feed_vars["crowd_target1"])
             # Get targets for splited yolo loss calculation
             num_output_layer = len(self.yolo_head.anchor_masks)
             targets = []
+            crowd_targets = []
             for i in range(num_output_layer):
                 k = 'target{}'.format(i)
+                v = 'crowd_target{}'.format(i)
                 if k in feed_vars:
                     targets.append(feed_vars[k])
+                if v in feed_vars:
+                    crowd_targets.append(feed_vars[v])
 
             loss = self.yolo_head.get_loss(body_feats, gt_bbox, gt_class,
-                                           gt_score, targets)
+                                           gt_score, targets, crowd_targets)
             total_loss = fluid.layers.sum(list(loss.values()))
             loss.update({'loss': total_loss})
             return loss
@@ -112,6 +116,8 @@ class YOLOv3(object):
             targets_def = {}
             for i in range(num_output_layer):
                 targets_def['target{}'.format(i)] = {'shape': [None, 3, None, None, None],  'dtype': 'float32',   'lod_level': 0}
+            for i in range(num_output_layer):
+                targets_def['crowd_target{}'.format(i)] = {'shape': [None, 3, 1, None, None],  'dtype': 'float32',   'lod_level': 0}
             # yapf: enable
 
             downsample = 32
@@ -143,6 +149,8 @@ class YOLOv3(object):
             num_output_layer = len(self.yolo_head.anchor_masks)
             fields.extend(
                 ['target{}'.format(i) for i in range(num_output_layer)])
+            fields.extend(
+                ['crowd_target{}'.format(i) for i in range(num_output_layer)])
         feed_vars = OrderedDict([(key, fluid.data(
             name=key,
             shape=inputs_def[key]['shape'],

@@ -71,11 +71,11 @@ class YOLOv3Loss(object):
                 "config YOLOv3Loss.batch_size is deprecated, "
                 "training batch size should be set by TrainReader.batch_size")
 
-    def __call__(self, outputs, gt_box, gt_label, gt_score, targets, anchors,
+    def __call__(self, outputs, gt_box, gt_label, gt_score, targets, crowd_targets, anchors,
                  anchor_masks, mask_anchors, num_classes, prefix_name, second_head=False):
         if self._use_fine_grained_loss:
             return self._get_fine_grained_loss(
-                outputs, targets, gt_box, self._train_batch_size, num_classes,
+                outputs, targets, crowd_targets, gt_box, self._train_batch_size, num_classes,
                 mask_anchors, self._ignore_thresh, second_head)
         else:
             losses = []
@@ -104,6 +104,7 @@ class YOLOv3Loss(object):
     def _get_fine_grained_loss(self,
                                outputs,
                                targets,
+                               crowd_targets,
                                gt_box,
                                train_batch_size,
                                num_classes,
@@ -137,7 +138,6 @@ class YOLOv3Loss(object):
 
         assert len(outputs) == len(targets), \
             "YOLOv3 output layer number not equal target number"
-
         loss_xys, loss_whs, loss_objs, loss_clss = [], [], [], []
         if self._iou_loss is not None:
             loss_ious = []
@@ -145,6 +145,7 @@ class YOLOv3Loss(object):
             loss_iou_awares = []
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
+            crowd_target = crowd_targets[i]
             downsample = self.downsample[i]
             an_num = len(anchors) // 2
             if self._iou_aware_loss is not None:
@@ -198,7 +199,7 @@ class YOLOv3Loss(object):
                 loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
 
             loss_obj_pos, loss_obj_neg = self._calc_obj_loss(
-                output, obj, tobj, gt_box, self._train_batch_size, anchors,
+                output, obj, tobj, crowd_target, gt_box, self._train_batch_size, anchors,
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
 
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
@@ -320,7 +321,7 @@ class YOLOv3Loss(object):
 
         return (tx, ty, tw, th, tscale, tobj, tcls)
 
-    def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
+    def _calc_obj_loss(self, output, obj, tobj, crowd_target, gt_box, batch_size, anchors,
                        num_classes, downsample, ignore_thresh, scale_x_y):
         # A prediction bbox overlap any gt_bbox over ignore_thresh, 
         # objectness loss will be ignored, process as follows:
@@ -392,6 +393,6 @@ class YOLOv3Loss(object):
         loss_obj = fluid.layers.sigmoid_cross_entropy_with_logits(obj, obj_mask)
         loss_obj_pos = fluid.layers.reduce_sum(loss_obj * tobj, dim=[1, 2, 3])
         loss_obj_neg = fluid.layers.reduce_sum(
-            loss_obj * (1.0 - obj_mask) * iou_mask, dim=[1, 2, 3])
+            loss_obj * (1.0 - obj_mask) * iou_mask * crowd_target, dim=[1, 2, 3])
 
         return loss_obj_pos, loss_obj_neg

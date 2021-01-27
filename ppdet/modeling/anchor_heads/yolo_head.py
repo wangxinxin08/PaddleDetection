@@ -448,7 +448,7 @@ class YOLOv3Head(object):
 
         return outputs
 
-    def get_loss(self, input, gt_box, gt_label, gt_score, targets):
+    def get_loss(self, input, gt_box, gt_label, gt_score, targets, crowd_targets):
         """
         Get final loss of network of YOLOv3.
 
@@ -465,7 +465,7 @@ class YOLOv3Head(object):
 
         """
         outputs = self._get_outputs(input, is_train=True)
-        losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
+        losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets, crowd_targets, 
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes,
                               self.prefix_name)

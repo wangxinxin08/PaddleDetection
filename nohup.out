@@ -1,0 +1,322 @@
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 13:44:33] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:34] code 404, message File not found
+172.24.164.178 - - [17/Dec/2020 13:44:34] "GET /favicon.ico HTTP/1.1" 404 -
+172.24.164.178 - - [17/Dec/2020 13:44:37] "GET /correct_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:39] "GET /correct_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:39] "GET /correct_target2.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:40] "GET /my_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:41] "GET /my_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 13:44:42] "GET /my_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 14:25:14] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:25:18] "GET /my_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:25:19] "GET /my_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:25:20] "GET /my_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 14:28:19] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:28:23] "GET /my_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:28:24] "GET /my_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 14:28:25] "GET /my_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 15:38:58] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 15:39:17] "GET /instances_val2017_debug_139.json HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 15:40:36] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 15:40:41] "GET /dataset/ HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 15:40:42] "GET /dataset/coco/ HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 17:02:35] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:02:46] "GET /my_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:02:46] "GET /my_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:02:47] "GET /my_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 17:34:58] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:35:15] "GET /my_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:35:15] "GET /my_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:35:16] "GET /my_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 17:43:51] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:43:55] "GET /my_t0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:43:56] "GET /my_t1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:43:56] "GET /my_t2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 17:51:21] "GET /my_t0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:51:22] "GET /my_t1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:51:23] "GET /my_t2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 17:56:26] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:56:29] "GET /c_target0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:56:30] "GET /c_target1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 17:56:31] "GET /c_target2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 18:54:57] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 18:55:00] "GET /my_t0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 18:55:00] "GET /my_t1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 18:55:01] "GET /my_t2.npy HTTP/1.1" 200 -
+
+----------------------------------------------------------------------->> 
+-------->> Now, listening at port 8090 ...
+-------->> You can visit the URL:   http://localhost:8090
+----------------------------------------------------------------------->> 
+
+Traceback (most recent call last):
+  File "myhttp.py", line 343, in <module>
+    srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+  File "/usr/lib64/python2.7/SocketServer.py", line 419, in __init__
+    self.server_bind()
+  File "/usr/lib64/python2.7/BaseHTTPServer.py", line 108, in server_bind
+    SocketServer.TCPServer.server_bind(self)
+  File "/usr/lib64/python2.7/SocketServer.py", line 430, in server_bind
+    self.socket.bind(self.server_address)
+  File "/usr/lib64/python2.7/socket.py", line 224, in meth
+    return getattr(self._sock,name)(*args)
+socket.error: [Errno 98] Address already in use
+172.24.164.178 - - [17/Dec/2020 20:04:31] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 20:05:02] "GET /my_t0.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 20:05:02] "GET /my_t1.npy HTTP/1.1" 200 -
+172.24.164.178 - - [17/Dec/2020 20:05:03] "GET /my_t2.npy HTTP/1.1" 200 -
+172.24.164.178 - - [22/Dec/2020 10:16:55] "GET / HTTP/1.1" 200 -
+172.24.164.178 - - [22/Dec/2020 10:16:55] code 404, message File not found
+172.24.164.178 - - [22/Dec/2020 10:16:55] "GET /favicon.ico HTTP/1.1" 404 -

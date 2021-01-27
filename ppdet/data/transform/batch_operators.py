@@ -216,10 +216,12 @@ class Gt2YoloTarget(BaseOperator):
         an_hw = np.array(self.anchors) / np.array([[w, h]])
         for sample in samples:
             # im, gt_bbox, gt_class, gt_score = sample
+            #print('sample.keys:', sample.keys())
             im = sample['image']
             gt_bbox = sample['gt_bbox']
             gt_class = sample['gt_class']
             gt_score = sample['gt_score']
+            is_crowd = sample['is_crowd']
             for i, (
                     mask, downsample_ratio
             ) in enumerate(zip(self.anchor_masks, self.downsample_ratios)):
@@ -228,13 +230,24 @@ class Gt2YoloTarget(BaseOperator):
                 target = np.zeros(
                     (len(mask), 6 + self.num_classes, grid_h, grid_w),
                     dtype=np.float32)
+                crowd_target = np.zeros(
+                    (len(mask), 1, grid_h, grid_w),
+                    dtype=np.float32) + 1
                 for b in range(gt_bbox.shape[0]):
                     gx, gy, gw, gh = gt_bbox[b, :]
                     cls = gt_class[b]
                     score = gt_score[b]
                     if gw <= 0. or gh <= 0. or score <= 0.:
                         continue
-
+                    if is_crowd[b] == 1:
+                        gx1 = int((gx - 0.5 * gw) * grid_w)
+                        gx2 = int((gx + 0.5 * gw) * grid_w)
+                        gy1 = int((gy - 0.5 * gh) * grid_h)
+                        gy2 = int((gy + 0.5 * gh) * grid_h)
+                        crowd_target[:, 0, gy1:gy2,gx1:gx2] = 0
+                        #print("box:", gx1,gy1,gx2,gy2)
+                        #print("crowd_target:", crowd_target)
+                        continue
                     # find best match anchor index
                     best_iou = 0.
                     best_idx = -1
@@ -286,13 +299,12 @@ class Gt2YoloTarget(BaseOperator):
                                 target[idx, 3, gj, gi] = np.log(
                                     gh * h / self.anchors[mask_i][1])
                                 target[idx, 4, gj, gi] = 2.0 - gw * gh
-
                                 # objectness record gt_score
                                 target[idx, 5, gj, gi] = score
-
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
                 sample['target{}'.format(i)] = target
+                sample['crowd_target{}'.format(i)] = crowd_target
         return samples
 
 
