@@ -1064,7 +1064,7 @@ class ATSS_Assigner(object):
         t_ = ep_bboxes_cy[candidate_idxs].reshape(num_gt, -1) - self.gts[:, 1:2]
         r_ = self.gts[:, 2:3] - ep_bboxes_cx[candidate_idxs].reshape(num_gt, -1)
         b_ = self.gts[:, 3:4] - ep_bboxes_cy[candidate_idxs].reshape(num_gt, -1)
-        is_in_gts = np.stack([l_, t_, r_, b_], axis=1).min(axis=1)[0] > 0.01
+        is_in_gts = np.stack([l_, t_, r_, b_], axis=1).min(axis=1) > 0.01
         is_pos = is_pos & is_in_gts
         num_anchors = self.anchors.shape[0]
         assigned_gt_inds = np.zeros((num_anchors), dtype=np.int) - 1
