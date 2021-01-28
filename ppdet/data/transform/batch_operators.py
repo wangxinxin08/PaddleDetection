@@ -447,7 +447,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
                                     gts=bboxes,
                                     num_level_bboxes=num_level_bboxes,
                                     topk=9)
-            assigned_result = assigner.assign()
+            assigned_result, assigned_iou = assigner.assign()
             pos_idx = assigned_result>=0
             gt_bboxes = bboxes[assigned_result]
             target_boxes = [gt_bboxes[0:length[0]],gt_bboxes[length[0]:length[0]+length[1]],gt_bboxes[length[0]+length[1]:]]
@@ -464,7 +464,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
             scales_target = np.zeros((anchors.shape[0]),dtype=np.float32)
             scales_target[pos_idx] = scales[pos_idx]
             obj_target = np.zeros((anchors.shape[0]),dtype=np.float32)
-            obj_target[pos_idx] = gt_scores[pos_idx]
+            obj_target[pos_idx] = gt_scores[pos_idx] * assigned_iou[pos_idx]
             #print("obj_target:",obj_target[pos_idx].sum())
             label_target = np.eye(self.num_classes)[gt_labels]
             label_target[assigned_result<0] = 0
@@ -1074,7 +1074,17 @@ class ATSS_Assigner(object):
         max_overlaps = overlaps_inf.max(axis=0)
         argmax_overlaps = overlaps_inf.argmax(axis=0)
         assigned_gt_inds[max_overlaps != -500] = argmax_overlaps[max_overlaps != -500] 
-        return assigned_gt_inds
+
+        pos_inds = assigned_gt_inds >= 0.
+        assigned_iou = np.zeros((num_anchors), dtype=np.float)
+        norm_ious = np.zeros(num_anchors) 
+        gt_max_overlap = overlaps_inf.max(axis=1)
+        overlaps_inf = np.multiply(overlaps_inf.T,1/gt_max_overlap).T
+        for i in range(len(argmax_overlaps)):                                                                                                               
+            norm_ious[i] = overlaps_inf[:,i][argmax_overlaps[i]]
+        assigned_iou[pos_inds] = norm_ious[pos_inds]
+        #print("norm_ious:", norm_ious[pos_inds])
+        return assigned_gt_inds, assigned_iou
 
     def overlap_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
