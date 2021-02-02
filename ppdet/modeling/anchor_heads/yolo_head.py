@@ -468,7 +468,6 @@ class YOLOv3Head(object):
 
         """
         outputs = self._get_outputs(input, is_train=True)
-        print(outputs)
         losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                                  self.anchors, self.anchor_masks,
                                  self.mask_anchors, self.num_classes,

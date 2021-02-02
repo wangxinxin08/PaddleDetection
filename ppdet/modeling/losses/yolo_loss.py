@@ -17,6 +17,7 @@ from __future__ import division
 from __future__ import print_function
 
 from paddle import fluid
+import paddle
 from ppdet.core.workspace import register
 try:
     from collections.abc import Sequence
@@ -76,7 +77,7 @@ class YOLOv3Loss(object):
                  anchor_masks, mask_anchors, num_classes, prefix_name, second_head=False):
         if self._use_fine_grained_loss:
             return self._get_fine_grained_loss(
-                outputs, targets, gt_box, self._train_batch_size, num_classes,
+                outputs, targets, gt_box, gt_label, self._train_batch_size, num_classes,
                 mask_anchors, self._ignore_thresh, second_head)
         else:
             losses = []
@@ -106,6 +107,7 @@ class YOLOv3Loss(object):
                                outputs,
                                targets,
                                gt_box,
+                               gt_label,
                                train_batch_size,
                                num_classes,
                                mask_anchors,
@@ -138,7 +140,6 @@ class YOLOv3Loss(object):
 
         assert len(outputs) == len(targets), \
             "YOLOv3 output layer number not equal target number"
-
         loss_xys, loss_whs, loss_objs, loss_clss = [], [], [], []
         if self._iou_loss is not None:
             loss_ious = []
@@ -153,6 +154,10 @@ class YOLOv3Loss(object):
             x, y, w, h, obj, cls = self._split_output(output, an_num,
                                                       num_classes)
             tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
+
+            # POTO: modify tobj
+            tobj = self._poto(output, cls, obj, tobj, gt_label, gt_box, self._train_batch_size, anchors,
+                       num_classes, downsample, self._ignore_thresh, scale_x_y=1.0)
 
             tscale_tobj = tscale * tobj
 
@@ -203,6 +208,8 @@ class YOLOv3Loss(object):
                 num_classes, downsample, self._ignore_thresh, scale_x_y)
 
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+            #fluid.layers.Print(fluid.layers.reshape(x=loss_cls,shape=[-1,80]))
+            #fluid.layers.Print(fluid.layers.reshape(x=tobj,shape=[-1,1]))
 
             # fg_num = fluid.layers.reduce_sum(tcls)                                                                                                         
             # fg_num = fluid.layers.cast(fg_num, dtype="int32")                                                                                              
@@ -334,13 +341,11 @@ class YOLOv3Loss(object):
 
         return (tx, ty, tw, th, tscale, tobj, tcls)
 
-    def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
+    def _poto(self, output, cls, obj, tobj, gt_label, gt_box, batch_size, anchors,
                        num_classes, downsample, ignore_thresh, scale_x_y):
-        # A prediction bbox overlap any gt_bbox over ignore_thresh, 
-        # objectness loss will be ignored, process as follows:
-
-        # 1. get pred bbox, which is same with YOLOv3 infer mode, use yolo_box here
-        # NOTE: img_size is set as 1.0 to get noramlized pred bbox
+        #return a new tobj
+        one_hot_label = fluid.one_hot(gt_label,depth=81,allow_out_of_range=False)[:,:,1:]
+        #1. calculate reg_loss_matrix
         bbox, prob = self.yolo_box(
             x=output,
             img_size=fluid.layers.ones(
@@ -382,6 +387,101 @@ class YOLOv3Loss(object):
             ious.append(fluid.layers.iou_similarity(pred, gt))
 
         iou = fluid.layers.stack(ious, axis=0)
+        reg_loss_matrix = -fluid.layers.log(iou+0.000001)
+        
+        pred_cls = fluid.layers.reshape(cls, (batch_size, -1, num_classes))
+        an_num = fluid.layers.shape(pred_cls)[1]
+        gt_num = fluid.layers.shape(one_hot_label)[1]
+        one_hot_label = fluid.layers.reshape(one_hot_label, shape = [batch_size, 1, gt_num, num_classes])
+        ex_one_hot_label = fluid.layers.expand(one_hot_label, expand_times=[1, an_num, 1, 1])
+
+        pred_cls = fluid.layers.reshape(pred_cls, shape=[batch_size, an_num, 1, num_classes])
+        ex_pred_cls = fluid.layers.expand(pred_cls, expand_times=[1, 1, gt_num, 1])
+        ex_cls_matrix = fluid.layers.sigmoid_cross_entropy_with_logits(ex_pred_cls, ex_one_hot_label)
+
+
+        cls_matrix_list = []
+        #fluid.layers.Print(gt_label[0])
+        for b in range(batch_size):
+            cls_matrix_per_batch = []
+            for i in range(50):
+                #fluid.layers.Print(ex_cls_matrix[b,:,i,gt_label[b,i]])
+                cls_matrix_per_batch.append(ex_cls_matrix[b,:,i,gt_label[b,i]])
+            cls_loss_per_batch = fluid.layers.stack(cls_matrix_per_batch, axis=1)
+            cls_matrix_list.append(cls_loss_per_batch)
+        
+            #fluid.layers.Print(cls_loss_per_batch)
+        
+        cls_matrix = fluid.layers.stack(cls_matrix_list, axis=0)
+        loss_matrix = fluid.layers.pow(reg_loss_matrix,factor=0.8) * fluid.layers.pow(cls_matrix,factor=0.2)
+        spatial_prior = fluid.layers.reshape(tobj, shape=[batch_size,-1,1])
+        ex_spatial_prior = fluid.layers.expand(spatial_prior, expand_times=[1,1,50])
+        loss_transposed = fluid.layers.transpose(loss_matrix, perm=[0, 2, 1])
+        top1_values, top1_indices = fluid.layers.topk(-loss_transposed, 1)
+        loss_matrix = fluid.layers.elementwise_mul(-loss_matrix, ex_spatial_prior)
+
+        minimal_loss_list = []
+        for b in range(batch_size):
+            input_zeros = fluid.layers.zeros_like(an_num)
+            update_ones = fluid.layers.ones_like(an_num)
+            index = fluid.layers.squeeze(input=top1_indices[b,:,:],axes=[1])
+            #index_transposed = fluid.layers.transpose(index, perm=[1, 0])
+            #fluid.layers.Print(index)
+            #fluid.layers.Print(update_ones)
+            minimal_loss_list.append(fluid.layers.scatter(input_zeros, index, update_ones))
+        #minimal_loss = fluid.layers.stack(minimal_loss_list, axis=0)
+        #fluid.layers.Print(input_zeros)
+        #fluid.layers.Print(top1_indices)
+        return tobj
+
+    def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
+                       num_classes, downsample, ignore_thresh, scale_x_y):
+        # A prediction bbox overlap any gt_bbox over ignore_thresh, 
+        # objectness loss will be ignored, process as follows:
+
+        # 1. get pred bbox, which is same with YOLOv3 infer mode, use yolo_box here
+        # NOTE: img_size is set as 1.0 to get noramlized pred bbox
+        bbox, prob = self.yolo_box(
+            x=output,
+            img_size=fluid.layers.ones(
+                shape=[batch_size, 2], dtype="int32"),
+            anchors=anchors,
+            class_num=num_classes,
+            conf_thresh=0.,
+            downsample_ratio=downsample,
+            clip_bbox=False,
+            scale_x_y=scale_x_y)
+        # 2. split pred bbox and gt bbox by sample, calculate IoU between pred bbox
+        #    and gt bbox in each sample
+        if batch_size > 1:
+            preds = fluid.layers.split(bbox, batch_size, dim=0)
+            gts = fluid.layers.split(gt_box, batch_size, dim=0)
+        else:
+            preds = [bbox]
+            gts = [gt_box]
+            probs = [prob]
+            #fluid.layers.Print(probs)
+        ious = []
+        for pred, gt in zip(preds, gts):
+
+            def box_xywh2xyxy(box):
+                x = box[:, 0]
+                y = box[:, 1]
+                w = box[:, 2]
+                h = box[:, 3]
+                return fluid.layers.stack(
+                    [
+                        x - w / 2.,
+                        y - h / 2.,
+                        x + w / 2.,
+                        y + h / 2.,
+                    ], axis=1)
+
+            pred = fluid.layers.squeeze(pred, axes=[0])
+            gt = box_xywh2xyxy(fluid.layers.squeeze(gt, axes=[0]))
+            ious.append(fluid.layers.iou_similarity(pred, gt))
+        iou = fluid.layers.stack(ious, axis=0)
+        #fluid.layers.Print(iou)
         # 3. Get iou_mask by IoU between gt bbox and prediction bbox,
         #    Get obj_mask by tobj(holds gt_score), calculate objectness loss
 
