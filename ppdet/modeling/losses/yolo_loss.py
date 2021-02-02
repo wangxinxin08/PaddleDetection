@@ -421,18 +421,27 @@ class YOLOv3Loss(object):
         loss_matrix = fluid.layers.elementwise_mul(-loss_matrix, ex_spatial_prior)
 
         minimal_loss_list = []
-        for b in range(batch_size):
-            input_zeros = fluid.layers.zeros_like(an_num)
-            update_ones = fluid.layers.ones_like(an_num)
-            index = fluid.layers.squeeze(input=top1_indices[b,:,:],axes=[1])
+        #for b in range(batch_size):
+        input_zeros = fluid.layers.zeros_like(an_num)
+        update_ones = fluid.layers.ones(shape=[batch_size*50],dtype='float32')
+        index = fluid.layers.squeeze(input=top1_indices,axes=[2])
+        index = fluid.layers.reshape(index, [-1,1])
+
+        tmp = fluid.layers.arange(0,batch_size, dtype='int64')
+        tmp = fluid.layers.reshape(tmp, shape=[batch_size, 1])
+        tmp = fluid.layers.expand(tmp,[1, gt_num])
+        tmp = fluid.layers.reshape(tmp, [-1,1])
+        idx = fluid.layers.concat(input=[tmp,index],axis=-1)
+        #fluid.layers.Print(idx)
+        #fluid.layers.Print(tmp)
             #index_transposed = fluid.layers.transpose(index, perm=[1, 0])
             #fluid.layers.Print(index)
             #fluid.layers.Print(update_ones)
-            minimal_loss_list.append(fluid.layers.scatter(input_zeros, index, update_ones))
-        #minimal_loss = fluid.layers.stack(minimal_loss_list, axis=0)
-        #fluid.layers.Print(input_zeros)
-        #fluid.layers.Print(top1_indices)
-        return tobj
+        out = fluid.layers.scatter_nd(idx, update_ones, shape=[batch_size, an_num])
+        poto_mask = fluid.layers.cast(out > 0., dtype="float32")
+        poto_mask = fluid.layers.reshape(poto_mask,shape=fluid.layers.shape(tobj))
+
+        return tobj*poto_mask
 
     def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
                        num_classes, downsample, ignore_thresh, scale_x_y):
