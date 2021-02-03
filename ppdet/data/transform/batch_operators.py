@@ -1084,7 +1084,21 @@ class ATSS_Assigner(object):
             norm_ious[i] = overlaps_inf[:,i][argmax_overlaps[i]]
         assigned_iou[pos_inds] = norm_ious[pos_inds]
         #print("norm_ious:", norm_ious[pos_inds])
-        return assigned_gt_inds, assigned_iou
+
+        centerness_pos = np.zeros((num_anchors), dtype=np.float)
+        assigned_target = self.gts[assigned_gt_inds]
+        l = bboxes_cx - assigned_target[:, 0]
+        t = bboxes_cy - assigned_target[:, 1]
+        r = assigned_target[:, 2] - bboxes_cx
+        b = assigned_target[:, 3] - bboxes_cy
+        left_right = np.stack([l, r], axis=1)
+        top_bottom = np.stack([t, b], axis=1)
+        centerness = np.sqrt(
+            (left_right.min(axis=1) / left_right.max(axis=1)) *
+            (top_bottom.min(axis=1) / top_bottom.max(axis=1)))
+        centerness_pos[pos_inds] = centerness[pos_inds]
+        #print("centerness:", centerness[pos_inds])
+        return assigned_gt_inds, centerness_pos
 
     def overlap_matrix(self, bbox, gt):
         lt = np.maximum(bbox[:, None, :2], gt[:, :2])  # left_top (x, y)
