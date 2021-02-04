@@ -164,7 +164,8 @@ class YOLOv3Loss(object):
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
 
-            if (abs(scale_x_y - 1.0) < eps):
+            #if (abs(scale_x_y - 1.0) < eps):
+            if False:
                 loss_x = fluid.layers.sigmoid_cross_entropy_with_logits(
                     x, tx) * tscale_tobj
                 loss_x = fluid.layers.reduce_sum(loss_x, dim=[1, 2, 3])
@@ -387,6 +388,38 @@ class YOLOv3Loss(object):
             ious.append(fluid.layers.iou_similarity(pred, gt))
 
         iou = fluid.layers.stack(ious, axis=0)
+        cls_matrix_list = []
+        pred_cls = fluid.layers.reshape(cls, (batch_size, -1, num_classes))
+        for b in range(batch_size):
+            pred_matrix_per_batch = []
+            for i in range(50):
+                pred_matrix_per_batch.append(pred_cls[b,:,gt_label[b,i]])
+            cls_loss_per_batch = fluid.layers.stack(pred_matrix_per_batch, axis=1)
+            cls_matrix_list.append(cls_loss_per_batch)
+        pred_matrix = fluid.layers.stack(cls_matrix_list, axis=0)
+        quality = fluid.layers.pow(iou,factor=0.8) * fluid.layers.pow(fluid.layers.sigmoid(pred_matrix),factor=0.2)
+        spatial_prior = fluid.layers.reshape(tobj, shape=[batch_size,-1,1])
+        ex_spatial_prior = fluid.layers.expand(spatial_prior, expand_times=[1,1,50])
+        quality = fluid.layers.elementwise_mul(quality, ex_spatial_prior)
+        quality_transposed = fluid.layers.transpose(quality, perm=[0, 2, 1])
+        top1_values, top1_indices = fluid.layers.topk(quality_transposed, 1)
+
+        an_num = fluid.layers.shape(pred_cls)[1]
+        gt_num = fluid.layers.shape(one_hot_label)[1]
+        update_ones = fluid.layers.ones(shape=[batch_size*50],dtype='float32')
+        index = fluid.layers.squeeze(input=top1_indices,axes=[2])
+        index = fluid.layers.reshape(index, [-1,1])
+
+        tmp = fluid.layers.arange(0,batch_size, dtype='int64')
+        tmp = fluid.layers.reshape(tmp, shape=[batch_size, 1])
+        tmp = fluid.layers.expand(tmp,[1, gt_num])
+        tmp = fluid.layers.reshape(tmp, [-1,1])
+        idx = fluid.layers.concat(input=[tmp,index],axis=-1)
+        out = fluid.layers.scatter_nd(idx, update_ones, shape=[batch_size, an_num])
+        poto_mask = fluid.layers.cast(out > 0., dtype="float32")
+        poto_mask = fluid.layers.reshape(poto_mask,shape=fluid.layers.shape(tobj))
+        '''
+        # get target by loss
         reg_loss_matrix = -fluid.layers.log(iou+0.000001)
         
         pred_cls = fluid.layers.reshape(cls, (batch_size, -1, num_classes))
@@ -440,7 +473,7 @@ class YOLOv3Loss(object):
         out = fluid.layers.scatter_nd(idx, update_ones, shape=[batch_size, an_num])
         poto_mask = fluid.layers.cast(out > 0., dtype="float32")
         poto_mask = fluid.layers.reshape(poto_mask,shape=fluid.layers.shape(tobj))
-
+        '''
         return tobj*poto_mask
 
     def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
@@ -555,9 +588,9 @@ class YOLOv3Loss(object):
         bias_x_y = 0.5 * (scale_x_y - 1)
         im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
         im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
-        xc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 0:1]) - bias_x_y +
+        xc = (scale_x_y * x[:, :, :, :, 0:1] - bias_x_y +
               grid[:, :, :, :, 0:1]) / w
-        yc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 1:2]) - bias_x_y +
+        yc = (scale_x_y * x[:, :, :, :, 1:2] - bias_x_y +
               grid[:, :, :, :, 1:2]) / h
         wc = fluid.layers.exp(x[:, :, :, :, 2:3]) * anchors[:, :, :, :, 0:1] / (
             w * downsample_ratio)
