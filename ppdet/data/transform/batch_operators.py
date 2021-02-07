@@ -35,6 +35,7 @@ __all__ = [
     'RandomShape',
     'PadMultiScaleTest',
     'Gt2YoloTarget',
+    'Gt2YoloTargetV2',
     'Gt2FCOSTarget',
     'Gt2TTFTarget',
 ]
@@ -292,6 +293,103 @@ class Gt2YoloTarget(BaseOperator):
 
                                 # classification
                                 target[idx, 6 + cls, gj, gi] = 1.
+                sample['target{}'.format(i)] = target
+        return samples
+
+
+@register_op
+class Gt2YoloTargetV2(BaseOperator):
+    """
+    Generate YOLOv3 targets by groud truth data, this operator is only used in
+    fine grained YOLOv3 loss mode
+    """
+
+    def __init__(self,
+                 anchors,
+                 anchor_masks,
+                 downsample_ratios,
+                 num_classes=80,
+                 anchor_t=4,
+                 bias=0.5):
+        super(Gt2YoloTargetV2, self).__init__()
+        self.anchors = [[anchors[i] for i in mask] for mask in anchor_masks]
+        self.anchor_masks = anchor_masks
+        self.downsample_ratios = downsample_ratios
+        self.num_classes = num_classes
+        self.anchor_t = anchor_t
+        self.bias = bias
+
+    def __call__(self, samples, context=None):
+        assert len(self.anchor_masks) == len(self.downsample_ratios), \
+            "anchor_masks', and 'downsample_ratios' should have same length."
+
+        h, w = samples[0]['image'].shape[1:3]
+        an_hw = np.array(self.anchors) / np.array([[w, h]])
+        for sample in samples:
+            # im, gt_bbox, gt_class, gt_score = sample
+            im = sample['image']
+            gt_bbox = sample['gt_bbox']
+            gt_class = sample['gt_class']
+            gt_score = sample['gt_score']
+            for i, (anchor, downsample_ratio
+                    ) in enumerate(zip(an_hw, self.downsample_ratios)):
+                na = len(anchor)
+                grid_h = int(h / downsample_ratio)
+                grid_w = int(w / downsample_ratio)
+                target = np.zeros(
+                    (na, 6 + self.num_classes, grid_h, grid_w),
+                    dtype=np.float32)
+
+                gt_label = np.concatenate(
+                    [gt_bbox, gt_class[:, None], gt_score[:, None]], axis=1)
+                gt_wh = gt_label[:, 2:4]
+                # filter gt bbox while w <=0 or h <= 0
+                mask = (gt_wh > 0.).all(1)
+                gt_label = gt_label[mask]
+                # filter gt according to scale
+                gt_wh = gt_label[:, 2:4]
+                r = gt_wh[None, :, :] / anchor[:, None, :]
+                mask = np.maximum(r, 1. / r).max(2) < self.anchor_t
+                an_idx, gt_idx = np.where(mask)
+                for a_i, g_i in zip(an_idx, gt_idx):
+                    gx, gy, gw, gh, gcls, gs = gt_label[g_i]
+                    gi = int(gx * grid_w)
+                    gj = int(gy * grid_h)
+                    target[a_i, 0, gj, gi] = gx * grid_w - gi
+                    target[a_i, 1, gj, gi] = gy * grid_h - gj
+                    target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
+                    target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
+                    target[a_i, 4, gj, gi] = 2.0 - gw * gh
+                    target[a_i, 5, gj, gi] = gs
+                    target[a_i, int(6 + gcls), gj, gi] = 1.
+
+                # for [1, 0], [0, 1], [-1, 0], [0, 1]
+                for a_i, g_i in zip(an_idx, gt_idx):
+                    gx, gy, gw, gh, gcls, gs = gt_label[g_i]
+                    gij = []
+                    gx1, gy1 = gx * grid_w, gy * grid_h
+                    gx2, gy2 = (1 - gx) * grid_w, (1 - gy) * grid_h
+                    if gx1 % 1. < self.bias and gx1 > 1.:
+                        gij.append([int(gx1) - 1, int(gy1)])
+                    if gy1 % 1. < self.bias and gy1 > 1.:
+                        gij.append([int(gx1), int(gy1) - 1])
+                    if gx2 % 1. < self.bias and gx2 > 1.:
+                        gij.append([int(gx1) + 1, int(gy1)])
+                    if gy2 % 1. < self.bias and gy2 > 1.:
+                        gij.append([int(gx1), int(gy1) + 1])
+
+                    for gi, gj in gij:
+                        if target[a_i, 5, gj, gi] <= 0. or \
+                            abs(target[a_i, 0, gj, gi]) + abs(target[a_i, 1, gj, gi]) \
+                            - abs(gx * grid_w - gi) - abs(gy * grid_h - gj) > 0.:
+                            target[a_i, 0, gj, gi] = gx * grid_w - gi
+                            target[a_i, 1, gj, gi] = gy * grid_h - gj
+                            target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
+                            target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
+                            target[a_i, 4, gj, gi] = 2.0 - gw * gh
+                            target[a_i, 5, gj, gi] = gs
+                            target[a_i, int(6 + gcls), gj, gi] = 1.
+
                 sample['target{}'.format(i)] = target
         return samples
 

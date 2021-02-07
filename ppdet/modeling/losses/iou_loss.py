@@ -50,6 +50,7 @@ class IouLoss(object):
         self._MAX_HI = max_height
         self._MAX_WI = max_width
         self.ciou_term = ciou_term
+        self.eiou_term = eiou_term
         self.loss_square = loss_square
 
     def __call__(self,

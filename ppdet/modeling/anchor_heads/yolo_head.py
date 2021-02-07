@@ -190,8 +190,9 @@ class YOLOv3Head(object):
             moving_mean_name=bn_name + '.mean',
             moving_variance_name=bn_name + '.var')
 
-        if act == 'leaky':
-            out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+        # if act == 'leaky':
+        #     out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+        out = out * fluid.layers.sigmoid(out)
         return out
 
     def _spp_module(self, input, name=""):
@@ -381,7 +382,7 @@ class YOLOv3Head(object):
                 route = self._upsample(route)
 
         return outputs
-    
+
     def _get_outputs2(self, input, is_train=True):
         """
         Get YOLOv3 head output
@@ -466,15 +467,23 @@ class YOLOv3Head(object):
         """
         outputs = self._get_outputs(input, is_train=True)
         losses1 = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
-                              self.anchors, self.anchor_masks,
-                              self.mask_anchors, self.num_classes,
-                              self.prefix_name)
-        if self.second_head==True:
+                                 self.anchors, self.anchor_masks,
+                                 self.mask_anchors, self.num_classes,
+                                 self.prefix_name)
+        if self.second_head == True:
             outputs2 = self._get_outputs2(input, is_train=True)
-            losses2 = self.yolo_loss(outputs2, gt_box, gt_label, gt_score, targets,
-                              self.anchors, self.anchor_masks,
-                              self.mask_anchors, self.num_classes,
-                              self.prefix_name, second_head=True)
+            losses2 = self.yolo_loss(
+                outputs2,
+                gt_box,
+                gt_label,
+                gt_score,
+                targets,
+                self.anchors,
+                self.anchor_masks,
+                self.mask_anchors,
+                self.num_classes,
+                self.prefix_name,
+                second_head=True)
             return dict(losses1, **losses2)
         return losses1
 
@@ -712,5 +721,3 @@ class YOLOv4Head(YOLOv3Head):
             outputs.append(block_out)
 
         return outputs
-
-    
