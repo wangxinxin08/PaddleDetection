@@ -145,6 +145,11 @@ class YOLOv3Loss(object):
             loss_ious = []
         if self._iou_aware_loss is not None:
             loss_iou_awares = []
+
+        # get quality
+        # quality shape [bs, an_num, gt_num]. an_num = The total number of anchors over all output stages.
+        qualities = []
+        ans = []
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
             downsample = self.downsample[i]
@@ -154,10 +159,58 @@ class YOLOv3Loss(object):
             x, y, w, h, obj, cls = self._split_output(output, an_num,
                                                       num_classes)
             tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
-
-            # POTO: modify tobj
-            tobj = self._poto(output, cls, obj, tobj, gt_label, gt_box, self._train_batch_size, anchors,
+            quality = self._get_poto_quality(output, cls, obj, tobj, gt_label, gt_box, self._train_batch_size, anchors,
                        num_classes, downsample, self._ignore_thresh, scale_x_y=1.0)
+            qualities.append(quality)
+            ans.append(fluid.layers.shape(quality)[1])
+        quality_matrix = fluid.layers.concat(qualities,axis=1)
+        # get poto tobjs
+        # tobj shape [bs, an_num, gt_num]. an_num = The total number of anchors over all output stages.
+        quality_transposed = fluid.layers.transpose(quality_matrix, perm=[0, 2, 1])
+        top1_values, top1_indices = fluid.layers.topk(quality_transposed, 1)
+        an_num = fluid.layers.shape(quality_matrix)[1]
+        gt_num = fluid.layers.shape(quality_matrix)[2]
+        update_ones = fluid.layers.ones(shape=[train_batch_size*50],dtype='float32')
+        index = fluid.layers.squeeze(input=top1_indices,axes=[2])
+        index = fluid.layers.reshape(index, [-1,1])
+
+        tmp = fluid.layers.arange(0,train_batch_size, dtype='int64')
+        tmp = fluid.layers.reshape(tmp, shape=[train_batch_size, 1])
+        tmp = fluid.layers.expand(tmp,[1, gt_num])
+        tmp = fluid.layers.reshape(tmp, [-1,1])
+        idx = fluid.layers.concat(input=[tmp,index],axis=-1)
+        out = fluid.layers.scatter_nd(idx, update_ones, shape=[train_batch_size, an_num])
+        poto_mask = fluid.layers.cast(out > 0., dtype="float32")
+        max_iou = fluid.layers.reduce_max(quality_matrix, dim=-1)
+        iou_mask = fluid.layers.cast(max_iou > 0., dtype="float32")
+        poto_mask = poto_mask * iou_mask
+        start = 0
+        poto_mask_list = []
+        for i, (output, target,
+                anchors) in enumerate(zip(outputs, targets, mask_anchors)):
+                end = ans[i] + start
+                poto_mask_list.append(poto_mask[:,start:end,:])
+                start = end
+        #fluid.layers.Print(fluid.layers.Print(iou_mask))
+        #iou_mask = fluid.layers.reshape(iou_mask,shape=fluid.layers.shape(tobj))
+        #poto_mask = fluid.layers.reshape(poto_mask,shape=fluid.layers.shape(tobj))
+        #fluid.layers.Print(fluid.layers.reduce_sum(poto_mask*iou_mask))
+
+        for i, (output, target,
+                anchors) in enumerate(zip(outputs, targets, mask_anchors)):
+            downsample = self.downsample[i]
+            an_num = len(anchors) // 2
+            if self._iou_aware_loss is not None:
+                ioup, output = self._split_ioup(output, an_num, num_classes)
+            x, y, w, h, obj, cls = self._split_output(output, an_num,
+                                                      num_classes)
+            tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
+            poto_tobj = fluid.layers.reshape(poto_mask_list[i],shape=fluid.layers.shape(tobj))
+            tobj = poto_tobj * tobj
+            fluid.layers.Print(fluid.layers.reduce_sum(tobj))
+            # POTO: modify tobj
+            #tobj = self._poto(output, cls, obj, tobj, gt_label, gt_box, self._train_batch_size, anchors,
+                       #num_classes, downsample, self._ignore_thresh, scale_x_y=1.0)
 
             tscale_tobj = tscale * tobj
 
@@ -342,9 +395,8 @@ class YOLOv3Loss(object):
 
         return (tx, ty, tw, th, tscale, tobj, tcls)
 
-    def _poto(self, output, cls, obj, tobj, gt_label, gt_box, batch_size, anchors,
+    def _get_poto_quality(self, output, cls, obj, tobj, gt_label, gt_box, batch_size, anchors,
                        num_classes, downsample, ignore_thresh, scale_x_y):
-        #return a new tobj
         one_hot_label = fluid.one_hot(gt_label,depth=81,allow_out_of_range=False)[:,:,1:]
         #1. calculate reg_loss_matrix
         bbox, prob = self.yolo_box(
@@ -388,6 +440,72 @@ class YOLOv3Loss(object):
             ious.append(fluid.layers.iou_similarity(pred, gt))
 
         iou = fluid.layers.stack(ious, axis=0)
+
+        cls_matrix_list = []
+        pred_cls = fluid.layers.reshape(cls, (batch_size, -1, num_classes))
+        for b in range(batch_size):
+            pred_matrix_per_batch = []
+            for i in range(50):
+                pred_matrix_per_batch.append(pred_cls[b,:,gt_label[b,i]])
+            cls_loss_per_batch = fluid.layers.stack(pred_matrix_per_batch, axis=1)
+            cls_matrix_list.append(cls_loss_per_batch)
+        pred_matrix = fluid.layers.stack(cls_matrix_list, axis=0)
+        quality = fluid.layers.pow(iou,factor=0.8) * fluid.layers.pow(fluid.layers.sigmoid(pred_matrix),factor=0.2)
+        spatial_prior = fluid.layers.reshape(tobj, shape=[batch_size,-1,1])
+        ex_spatial_prior = fluid.layers.expand(spatial_prior, expand_times=[1,1,50])
+        quality = fluid.layers.elementwise_mul(quality, ex_spatial_prior)
+        return quality
+
+    def _poto(self, output, cls, obj, tobj, gt_label, gt_box, batch_size, anchors,
+                       num_classes, downsample, ignore_thresh, scale_x_y):
+        #return a new tobj
+        fluid.layers.Print(tobj)
+        one_hot_label = fluid.one_hot(gt_label,depth=81,allow_out_of_range=False)[:,:,1:]
+        #fluid.layers.Print(gt_box)
+        #fluid.layers.Print(gt_label[0,20:])
+        #1. calculate reg_loss_matrix
+        bbox, prob = self.yolo_box(
+            x=output,
+            img_size=fluid.layers.ones(
+                shape=[batch_size, 2], dtype="int32"),
+            anchors=anchors,
+            class_num=num_classes,
+            conf_thresh=0.,
+            downsample_ratio=downsample,
+            clip_bbox=False,
+            scale_x_y=scale_x_y)
+        
+        # 2. split pred bbox and gt bbox by sample, calculate IoU between pred bbox
+        #    and gt bbox in each sample
+        if batch_size > 1:
+            preds = fluid.layers.split(bbox, batch_size, dim=0)
+            gts = fluid.layers.split(gt_box, batch_size, dim=0)
+        else:
+            preds = [bbox]
+            gts = [gt_box]
+            probs = [prob]
+        ious = []
+        for pred, gt in zip(preds, gts):
+
+            def box_xywh2xyxy(box):
+                x = box[:, 0]
+                y = box[:, 1]
+                w = box[:, 2]
+                h = box[:, 3]
+                return fluid.layers.stack(
+                    [
+                        x - w / 2.,
+                        y - h / 2.,
+                        x + w / 2.,
+                        y + h / 2.,
+                    ], axis=1)
+
+            pred = fluid.layers.squeeze(pred, axes=[0])
+            gt = box_xywh2xyxy(fluid.layers.squeeze(gt, axes=[0]))
+            ious.append(fluid.layers.iou_similarity(pred, gt))
+
+        iou = fluid.layers.stack(ious, axis=0)
+
         cls_matrix_list = []
         pred_cls = fluid.layers.reshape(cls, (batch_size, -1, num_classes))
         for b in range(batch_size):
@@ -402,6 +520,7 @@ class YOLOv3Loss(object):
         ex_spatial_prior = fluid.layers.expand(spatial_prior, expand_times=[1,1,50])
         quality = fluid.layers.elementwise_mul(quality, ex_spatial_prior)
         quality_transposed = fluid.layers.transpose(quality, perm=[0, 2, 1])
+
         top1_values, top1_indices = fluid.layers.topk(quality_transposed, 1)
 
         an_num = fluid.layers.shape(pred_cls)[1]
@@ -417,7 +536,12 @@ class YOLOv3Loss(object):
         idx = fluid.layers.concat(input=[tmp,index],axis=-1)
         out = fluid.layers.scatter_nd(idx, update_ones, shape=[batch_size, an_num])
         poto_mask = fluid.layers.cast(out > 0., dtype="float32")
+        max_iou = fluid.layers.reduce_max(iou, dim=-1)
+        iou_mask = fluid.layers.cast(max_iou > 0.01, dtype="float32")
+        #fluid.layers.Print(fluid.layers.Print(iou_mask))
+        iou_mask = fluid.layers.reshape(iou_mask,shape=fluid.layers.shape(tobj))
         poto_mask = fluid.layers.reshape(poto_mask,shape=fluid.layers.shape(tobj))
+        fluid.layers.Print(fluid.layers.reduce_sum(poto_mask*tobj*iou_mask))
         '''
         # get target by loss
         reg_loss_matrix = -fluid.layers.log(iou+0.000001)
