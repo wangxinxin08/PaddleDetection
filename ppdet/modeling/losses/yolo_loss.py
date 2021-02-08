@@ -164,12 +164,26 @@ class YOLOv3Loss(object):
             qualities.append(quality)
             ans.append(fluid.layers.shape(quality)[1])
         quality_matrix = fluid.layers.concat(qualities,axis=1)
-        # get poto tobjs
-        # tobj shape [bs, an_num, gt_num]. an_num = The total number of anchors over all output stages.
-        quality_transposed = fluid.layers.transpose(quality_matrix, perm=[0, 2, 1])
-        top1_values, top1_indices = fluid.layers.topk(quality_transposed, 1)
         an_num = fluid.layers.shape(quality_matrix)[1]
         gt_num = fluid.layers.shape(quality_matrix)[2]
+
+        _, foreground_idxs = fluid.layers.topk(quality_matrix, 1)
+        
+        foreground_list = []
+        for b in range(train_batch_size):
+            f_idx = foreground_idxs[b]
+            ones = fluid.layers.ones(shape=[an_num],dtype='float32')
+            gi = fluid.layers.arange(0, fluid.layers.cast(an_num, dtype='int64'), dtype='int64')
+            gi = fluid.layers.reshape(gi, shape=[an_num, 1])
+            idx_f = fluid.layers.concat(input=[gi,f_idx],axis=-1)
+            out_f = fluid.layers.scatter_nd(idx_f, ones, shape=[an_num, gt_num])
+            foreground_list.append(out_f)
+        foreground_matrix = fluid.layers.stack(foreground_list, axis=0)
+        quality_matrix_f = quality_matrix * foreground_matrix
+        # get poto tobjs
+        # tobj shape [bs, an_num, gt_num]. an_num = The total number of anchors over all output stages.
+        quality_transposed = fluid.layers.transpose(quality_matrix_f, perm=[0, 2, 1])
+        top1_values, top1_indices = fluid.layers.topk(quality_transposed, 1)
         update_ones = fluid.layers.ones(shape=[train_batch_size*50],dtype='float32')
         index = fluid.layers.squeeze(input=top1_indices,axes=[2])
         index = fluid.layers.reshape(index, [-1,1])
@@ -207,7 +221,7 @@ class YOLOv3Loss(object):
             tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
             poto_tobj = fluid.layers.reshape(poto_mask_list[i],shape=fluid.layers.shape(tobj))
             tobj = poto_tobj * tobj
-            fluid.layers.Print(fluid.layers.reduce_sum(tobj))
+            
             # POTO: modify tobj
             #tobj = self._poto(output, cls, obj, tobj, gt_label, gt_box, self._train_batch_size, anchors,
                        #num_classes, downsample, self._ignore_thresh, scale_x_y=1.0)
