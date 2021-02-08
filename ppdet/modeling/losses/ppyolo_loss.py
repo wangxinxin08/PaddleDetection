@@ -136,7 +136,7 @@ class PPYOLOLoss(object):
 
         assert len(outputs) == len(targets), \
             "YOLOv3 output layer number not equal target number"
-        blance = [0.25, 1., 4.]
+        blance = [4., 1., 0.25]
         loss_ious, loss_iou_awares, loss_clss = [], [], []
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
@@ -152,27 +152,37 @@ class PPYOLOLoss(object):
                                       downsample, self._train_batch_size,
                                       scale_x_y)
             loss_iou = loss_iou * tobj
-            loss_iou = fluid.layers.reduce_mean(loss_iou, dim=[1, 2, 3])
-            loss_ious.append(fluid.layers.reduce_sum(loss_iou))
+            loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
+            loss_ious.append(fluid.layers.reduce_mean(loss_iou))
 
             obj_mask = fluid.layers.cast(tobj > 0., dtype="float32")
             obj_mask.stop_gradient = True
 
-            loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
+            loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(
+                cls, tcls) / (num_classes * 2.)
             loss_cls = fluid.layers.elementwise_mul(loss_cls, obj_mask, axis=0)
-            loss_cls = fluid.layers.reduce_mean(loss_cls, dim=[1, 2, 3, 4])
-            loss_clss.append(fluid.layers.reduce_sum(loss_cls))
+            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
+            loss_clss.append(fluid.layers.reduce_mean(loss_cls))
 
             loss_iou_aware = self._iou_aware_loss(
-                obj, x, y, w, h, tx, ty, tw, th, anchors, downsample,
-                self._train_batch_size, scale_x_y)
-            # pos + neg
-            loss_iou_aware = loss_iou_aware * tobj + loss_iou_aware * (1. -
-                                                                       obj_mask)
-            loss_iou_aware = fluid.layers.reduce_mean(
+                obj,
+                x,
+                y,
+                w,
+                h,
+                tx,
+                ty,
+                tw,
+                th,
+                anchors,
+                downsample,
+                self._train_batch_size,
+                scale_x_y,
+                tobj=tobj)
+            loss_iou_aware = fluid.layers.reduce_sum(
                 loss_iou_aware, dim=[1, 2, 3])
             loss_iou_awares.append(
-                fluid.layers.reduce_sum(loss_iou_aware) * blance[i])
+                fluid.layers.reduce_mean(loss_iou_aware) * blance[i])
 
         losses_all = {
             "loss_iou": fluid.layers.sum(loss_ious),
@@ -243,14 +253,13 @@ class PPYOLOLoss(object):
         tw = target[:, :, 2, :, :]
         th = target[:, :, 3, :, :]
 
-        tscale = target[:, :, 4, :, :]
-        tobj = target[:, :, 5, :, :]
+        tobj = target[:, :, 4, :, :]
 
         tcls = fluid.layers.transpose(
-            target[:, :, 6:, :, :], perm=[0, 1, 3, 4, 2])
+            target[:, :, 5:, :, :], perm=[0, 1, 3, 4, 2])
         tcls.stop_gradient = True
 
-        return (tx, ty, tw, th, tscale, tobj, tcls)
+        return (tx, ty, tw, th, tobj, tcls)
 
     def _calc_obj_loss(self, output, obj, tobj, gt_box, batch_size, anchors,
                        num_classes, downsample, ignore_thresh, scale_x_y):

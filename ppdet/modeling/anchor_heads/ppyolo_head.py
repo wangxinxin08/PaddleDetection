@@ -106,10 +106,8 @@ def conv_bn(input, ch_out, filter_size, stride, padding, act='silu', name=None):
         bias_attr=False)
 
     bn_name = name + ".bn"
-    bn_param_attr = ParamAttr(
-        regularizer=L2Decay(self.norm_decay), name=bn_name + '.scale')
-    bn_bias_attr = ParamAttr(
-        regularizer=L2Decay(self.norm_decay), name=bn_name + '.offset')
+    bn_param_attr = ParamAttr(regularizer=L2Decay(0.), name=bn_name + '.scale')
+    bn_bias_attr = ParamAttr(regularizer=L2Decay(0.), name=bn_name + '.offset')
     out = fluid.layers.batch_norm(
         input=conv,
         act=None,
@@ -194,15 +192,15 @@ def upsample(input, scale=2, name=""):
     return out
 
 
-def concat(inputs, axis):
-    return fluid.layers.concat(inputs, axis=axis)
+def concat(inputs, axis, name=None):
+    return fluid.layers.concat(inputs, axis=axis, name=name)
 
 
-def stack_conv(input, args, name=None):
+def stack_conv(input, *args, name=None):
     output = input
     for i, (ch_out, filter_size, stride, padding, act) in enumerate(args):
         output = conv_bn(output, ch_out, filter_size, stride, padding, act,
-                         name + ".0")
+                         name + ".{}".format(i))
     return output
 
 
@@ -246,9 +244,9 @@ class PPYOLOHead(object):
         self.name = weight_prefix_name
         if neck_cfg is None:
             self.neck_cfg = [
-                # 0 block5
+                # 0 block3
                 # 1 block4
-                # 2 block3
+                # 2 block5
                 [-1, conv_bn, [512, 1, 1, 0, act]],  #3
                 [-1, basic_block, [512, 2, act, True]],  #4
                 [-1, spp, [512, act, False]],  #5
@@ -261,7 +259,7 @@ class PPYOLOHead(object):
                 [-1, basic_block, [256, 2, act, True]],  #12 P4
                 [-1, conv_bn, [128, 1, 1, 0, act]],  #13 transition
                 [-1, upsample, [2]],  #14 upsample
-                [[-1, 2], concat, [1]],  #15 concat
+                [[-1, 0], concat, [1]],  #15 concat
                 [-1, conv_bn, [128, 1, 1, 0, act]],  #16
                 [-1, basic_block, [128, 2, act, True]],  #17
                 [-1, basic_block, [128, 2, act, True]],  #18, C3
@@ -279,7 +277,7 @@ class PPYOLOHead(object):
         else:
             self.neck_cfg = neck_cfg
 
-        if head_cfg:
+        if head_cfg is None:
             out_channels = [
                 len(anchor_mask) * (num_classes + 5)
                 for anchor_mask in anchor_masks
@@ -315,6 +313,28 @@ class PPYOLOHead(object):
         self.scale_x_y = scale_x_y
         self.clip_bbox = clip_bbox
 
+    def _parse_anchors(self, anchors):
+        """
+        Check ANCHORS/ANCHOR_MASKS in config and parse mask_anchors
+
+        """
+        self.anchors = []
+        self.mask_anchors = []
+
+        assert len(anchors) > 0, "ANCHORS not set."
+        assert len(self.anchor_masks) > 0, "ANCHOR_MASKS not set."
+
+        for anchor in anchors:
+            assert len(anchor) == 2, "anchor {} len should be 2".format(anchor)
+            self.anchors.extend(anchor)
+
+        anchor_num = len(anchors)
+        for masks in self.anchor_masks:
+            self.mask_anchors.append([])
+            for mask in masks:
+                assert mask < anchor_num, "anchor mask index overflow"
+                self.mask_anchors[-1].extend(anchors[mask])
+
     def _get_outputs(self, input, is_train=True):
         """
         Get YOLOv3 head output
@@ -331,7 +351,7 @@ class PPYOLOHead(object):
 
         # get last out_layer_num blocks in reverse order
         out_layer_num = len(self.anchor_masks)
-        layers = input[-1:-out_layer_num - 1:-1]
+        layers = input[:out_layer_num]
 
         # neck
         for i, (f, m, args) in enumerate(self.neck_cfg):
@@ -339,9 +359,8 @@ class PPYOLOHead(object):
                 inputs = layers[f]
             else:
                 inputs = [layers[idx] for idx in f]
-
-            layers.append(
-                m(inputs, *args, name=self.name + '.neck.{}'.format(i)))
+            layer = m(inputs, *args, name=self.name + 'yolo_neck.{}'.format(i))
+            layers.append(layer)
 
         # head
         for i, (f, m, args) in enumerate(self.head_cfg):
@@ -351,7 +370,7 @@ class PPYOLOHead(object):
                 inputs = [layers[idx] for idx in f]
 
             outputs.append(
-                m(inputs, *args, name=self.name + '.head.{}'.format(i)))
+                m(inputs, *args, name=self.name + 'yolo_head.{}'.format(i)))
 
         return outputs
 
@@ -420,5 +439,4 @@ class PPYOLOHead(object):
 
         return self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                               self.anchors, self.anchor_masks,
-                              self.mask_anchors, self.num_classes,
-                              self.prefix_name)
+                              self.mask_anchors, self.num_classes, self.name)

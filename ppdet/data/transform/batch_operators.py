@@ -335,7 +335,7 @@ class Gt2YoloTargetV1(BaseOperator):
                 grid_h = int(h / downsample_ratio)
                 grid_w = int(w / downsample_ratio)
                 target = np.zeros(
-                    (len(mask), 6 + self.num_classes, grid_h, grid_w),
+                    (len(mask), 5 + self.num_classes, grid_h, grid_w),
                     dtype=np.float32)
                 for b in range(gt_bbox.shape[0]):
                     gx, gy, gw, gh = gt_bbox[b, :]

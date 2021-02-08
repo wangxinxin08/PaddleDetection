@@ -55,6 +55,7 @@ class IouAwareLoss(IouLoss):
                  downsample_ratio,
                  batch_size,
                  scale_x_y,
+                 tobj=None,
                  eps=1.e-10):
         '''
         Args:
@@ -72,8 +73,12 @@ class IouAwareLoss(IouLoss):
         gt = self._bbox_transform(tx, ty, tw, th, anchors, downsample_ratio,
                                   batch_size, True, scale_x_y, eps)
         iouk = self._iou(pred, gt, ioup, eps)
+        if tobj is not None:
+            # obj_mask = fluid.layers.cast(tobj <= 0., dtype="float32")
+            # iouk = iouk * tobj + iouk * obj_mask
+            iouk = iouk * tobj
         iouk.stop_gradient = True
-
+        ioup = fluid.layers.sigmoid(ioup)
         loss_iou_aware = fluid.layers.cross_entropy(ioup, iouk, soft_label=True)
         loss_iou_aware = loss_iou_aware * self._loss_weight
         return loss_iou_aware
