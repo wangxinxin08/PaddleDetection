@@ -25,6 +25,7 @@ from . import diou_loss_yolo
 from . import iou_aware_loss
 from . import ssd_with_lmk_loss
 from . import ppyolo_loss
+from . import ppyolov2_loss
 
 from .iou_aware_loss import *
 from .yolo_loss import *
@@ -37,3 +38,4 @@ from .fcos_loss import *
 from .diou_loss_yolo import *
 from .ssd_with_lmk_loss import *
 from .ppyolo_loss import *
+from .ppyolov2_loss import *

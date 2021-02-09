@@ -35,11 +35,13 @@ PPYOLOHead:
             [116, 90], [156, 198], [373, 326]]
   norm_decay: 0.
   scale_x_y: 1.05
-  yolo_loss: PPYOLOLoss
+  yolo_loss: PPYOLOv2Loss
   nms: MatrixNMS
   act: silu
+  iou_aware: true
+  iou_aware_factor: 0.4
 
-PPYOLOLoss:
+PPYOLOv2Loss:
   ignore_thresh: 0.7
   scale_x_y: 1.05
   label_smooth: false
@@ -48,9 +50,9 @@ PPYOLOLoss:
   iou_aware_loss: IouAwareLoss
 
 IouLoss:
-  loss_weight: 0.5
+  loss_weight: 2.5
   eiou_term: true
-  eiou_weight: 0.25
+  eiou_weight: 1.0
   loss_square: true
   max_height: 640
   max_width: 640

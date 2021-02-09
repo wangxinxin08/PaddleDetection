@@ -196,7 +196,8 @@ def concat(inputs, axis, name=None):
     return fluid.layers.concat(inputs, axis=axis, name=name)
 
 
-def stack_conv(input, *args, name=None):
+def stack_conv(input, *args, **kwargs):
+    name = kwargs['name']
     output = input
     for i, (ch_out, filter_size, stride, padding, act) in enumerate(args):
         output = conv_bn(output, ch_out, filter_size, stride, padding, act,
@@ -222,6 +223,7 @@ class PPYOLOHead(object):
 
     def __init__(self,
                  neck_cfg=None,
+                 save_idx=None,
                  head_cfg=None,
                  act='silu',
                  norm_decay=0.,
@@ -229,6 +231,8 @@ class PPYOLOHead(object):
                  anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45],
                           [59, 119], [116, 90], [156, 198], [373, 326]],
                  anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
+                 iou_aware=False,
+                 iou_aware_factor=0.4,
                  yolo_loss="PPYOLOLoss",
                  nms=MultiClassNMS(
                      score_threshold=0.01,
@@ -264,38 +268,40 @@ class PPYOLOHead(object):
                 [-1, basic_block, [128, 2, act, True]],  #17
                 [-1, basic_block, [128, 2, act, True]],  #18, C3
                 [-1, conv_bn, [256, 3, 2, 1, act]],  #19 downsample
-                [[-1, 12], concat, [1]],  #20 concat
+                [[-1, 4], concat, [1]],  #20 concat
                 [-1, conv_bn, [256, 1, 1, 0, act]],  #21
                 [-1, basic_block, [256, 2, act, True]],  #22
                 [-1, basic_block, [256, 2, act, True]],  #23, C4
                 [-1, conv_bn, [512, 3, 2, 1, act]],  #24 downsample
-                [[-1, 6], concat, [1]],  #25 concat
+                [[-1, 3], concat, [1]],  #25 concat
                 [-1, conv_bn, [512, 1, 1, 0, act]],  #26
                 [-1, basic_block, [512, 2, act, True]],  #27
                 [-1, basic_block, [512, 2, act, True]],  #28, C5
             ]
+            self.save_idx = [6, 12, 18, 23, 28]
         else:
             self.neck_cfg = neck_cfg
+            self.save_idx = save_idx
 
         if head_cfg is None:
             out_channels = [
-                len(anchor_mask) * (num_classes + 5)
+                len(anchor_mask) * (num_classes + 6)
                 for anchor_mask in anchor_masks
             ]
 
             self.head_cfg = [
                 # ch_outs
                 [
-                    28, stack_conv,
+                    7, stack_conv,
                     [[1024, 3, 1, 1, act], [out_channels[0], 1, 1, 0, None]]
                 ],
                 [
-                    23, stack_conv, [[512, 3, 1, 1, act],
-                                     [out_channels[1], 1, 1, 0, None]]
+                    6, stack_conv, [[512, 3, 1, 1, act],
+                                    [out_channels[1], 1, 1, 0, None]]
                 ],
                 [
-                    18, stack_conv, [[256, 3, 1, 1, act],
-                                     [out_channels[2], 1, 1, 0, None]]
+                    5, stack_conv, [[256, 3, 1, 1, act],
+                                    [out_channels[2], 1, 1, 0, None]]
                 ],
             ]
         else:
@@ -303,6 +309,8 @@ class PPYOLOHead(object):
 
         self.norm_decay = norm_decay
         self.num_classes = num_classes
+        self.iou_aware = iou_aware
+        self.iou_aware_factor = iou_aware_factor
         self.anchor_masks = anchor_masks
         self._parse_anchors(anchors)
         self.yolo_loss = yolo_loss
@@ -354,13 +362,16 @@ class PPYOLOHead(object):
         layers = input[:out_layer_num]
 
         # neck
+        pre = layers[-1]
         for i, (f, m, args) in enumerate(self.neck_cfg):
             if isinstance(f, int):
-                inputs = layers[f]
+                inputs = pre if f == -1 else layers[i]
             else:
-                inputs = [layers[idx] for idx in f]
+                inputs = [pre if idx == -1 else layers[idx] for idx in f]
             layer = m(inputs, *args, name=self.name + 'yolo_neck.{}'.format(i))
-            layers.append(layer)
+            pre = layer
+            if i + 3 in self.save_idx:
+                layers.append(layer)
 
         # head
         for i, (f, m, args) in enumerate(self.head_cfg):
@@ -394,6 +405,11 @@ class PPYOLOHead(object):
         for i, output in enumerate(outputs):
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
+            if self.iou_aware:
+                output = get_iou_aware_score(output,
+                                             len(self.anchor_masks[i]),
+                                             self.num_classes,
+                                             self.iou_aware_factor)
             box, score = fluid.layers.yolo_box(
                 x=output,
                 img_size=im_size,
@@ -401,7 +417,7 @@ class PPYOLOHead(object):
                 class_num=self.num_classes,
                 conf_thresh=self.nms.score_threshold,
                 downsample_ratio=self.downsample[i],
-                name=self.prefix_name + "yolo_box" + str(i),
+                name=self.name + "yolo_box" + str(i),
                 clip_bbox=self.clip_bbox,
                 scale_x_y=scale_x_y)
             boxes.append(box)

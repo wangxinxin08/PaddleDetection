@@ -375,7 +375,7 @@ class Gt2YoloTargetV1(BaseOperator):
                         target[best_n, 4, gj, gi] = score
 
                         # classification
-                        target[best_n, 5 + cls, gj, gi] = score
+                        target[best_n, 5 + cls, gj, gi] = 1.
 
                     # For non-matched anchors, calculate the target if the iou 
                     # between anchor and gt is larger than iou_thresh
@@ -398,7 +398,7 @@ class Gt2YoloTargetV1(BaseOperator):
                                 target[idx, 4, gj, gi] = score
 
                                 # classification
-                                target[idx, 5 + cls, gj, gi] = score
+                                target[idx, 5 + cls, gj, gi] = 1.
                 sample['target{}'.format(i)] = target
         return samples
 
