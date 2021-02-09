@@ -157,17 +157,17 @@ class PPYOLOv2Loss(object):
                                       downsample, self._train_batch_size,
                                       scale_x_y)
             loss_iou = loss_iou * tobj
-            loss_iou = fluid.layers.reduce_mean(loss_iou, dim=[1, 2, 3])
-            loss_ious.append(fluid.layers.reduce_sum(loss_iou))
+            loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
+            loss_ious.append(fluid.layers.reduce_mean(loss_iou))
 
             if self._iou_aware_loss is not None:
                 loss_iou_aware = self._iou_aware_loss(
                     ioup, x, y, w, h, tx, ty, tw, th, anchors, downsample,
                     self._train_batch_size, scale_x_y)
                 loss_iou_aware = loss_iou_aware * tobj
-                loss_iou_aware = fluid.layers.reduce_mean(
+                loss_iou_aware = fluid.layers.reduce_sum(
                     loss_iou_aware, dim=[1, 2, 3])
-                loss_iou_awares.append(fluid.layers.reduce_sum(loss_iou_aware))
+                loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
 
             loss_obj_pos, loss_obj_neg = self._calc_obj_loss(
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
@@ -175,11 +175,11 @@ class PPYOLOv2Loss(object):
 
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
-            loss_cls = fluid.layers.reduce_mean(loss_cls, dim=[1, 2, 3, 4])
+            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
             loss_objs.append(
-                fluid.layers.reduce_sum(loss_obj_pos + loss_obj_neg))
-            loss_clss.append(fluid.layers.reduce_sum(loss_cls))
+                fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg))
+            loss_clss.append(fluid.layers.reduce_mean(loss_cls))
 
         losses_all = {
             "loss_iou": fluid.layers.sum(loss_ious),
@@ -344,8 +344,8 @@ class PPYOLOv2Loss(object):
         # For positive objectness grids, objectness loss should be calculated
         # For negative objectness grids, objectness loss is calculated only iou_mask == 1.0
         loss_obj = fluid.layers.sigmoid_cross_entropy_with_logits(obj, obj_mask)
-        loss_obj_pos = fluid.layers.reduce_mean(loss_obj * tobj, dim=[1, 2, 3])
-        loss_obj_neg = fluid.layers.reduce_mean(
+        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * tobj, dim=[1, 2, 3])
+        loss_obj_neg = fluid.layers.reduce_sum(
             loss_obj * (1.0 - obj_mask) * iou_mask, dim=[1, 2, 3])
 
         return loss_obj_pos, loss_obj_neg
