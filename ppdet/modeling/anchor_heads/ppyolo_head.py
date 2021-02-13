@@ -283,26 +283,15 @@ class PPYOLOHead(object):
             self.neck_cfg = neck_cfg
             self.save_idx = save_idx
 
+        self.out_channels = [
+            len(anchor_mask) * (num_classes + 6) for anchor_mask in anchor_masks
+        ]
         if head_cfg is None:
-            out_channels = [
-                len(anchor_mask) * (num_classes + 6)
-                for anchor_mask in anchor_masks
-            ]
-
             self.head_cfg = [
                 # ch_outs
-                [
-                    7, stack_conv,
-                    [[1024, 3, 1, 1, act], [out_channels[0], 1, 1, 0, None]]
-                ],
-                [
-                    6, stack_conv, [[512, 3, 1, 1, act],
-                                    [out_channels[1], 1, 1, 0, None]]
-                ],
-                [
-                    5, stack_conv, [[256, 3, 1, 1, act],
-                                    [out_channels[2], 1, 1, 0, None]]
-                ],
+                [7, conv_bn, [1024, 3, 1, 1, act]],
+                [6, conv_bn, [512, 3, 1, 1, act]],
+                [5, conv_bn, [256, 3, 1, 1, act]],
             ]
         else:
             self.head_cfg = head_cfg
@@ -361,6 +350,9 @@ class PPYOLOHead(object):
         out_layer_num = len(self.anchor_masks)
         layers = input[:out_layer_num]
 
+        # for i in range(out_layer_num):
+        #     fluid.layers.Print(layers[i])
+
         # neck
         pre = layers[-1]
         for i, (f, m, args) in enumerate(self.neck_cfg):
@@ -371,6 +363,7 @@ class PPYOLOHead(object):
             layer = m(inputs, *args, name=self.name + 'yolo_neck.{}'.format(i))
             pre = layer
             if i + 3 in self.save_idx:
+                # fluid.layers.Print(layer)
                 layers.append(layer)
 
         # head
@@ -380,8 +373,21 @@ class PPYOLOHead(object):
             else:
                 inputs = [layers[idx] for idx in f]
 
-            outputs.append(
-                m(inputs, *args, name=self.name + 'yolo_head.{}'.format(i)))
+            layer = m(inputs, *args, name=self.name + 'yolo_head.{}'.format(i))
+            layer = fluid.layers.conv2d(
+                input=layer,
+                num_filters=self.out_channels[i],
+                filter_size=1,
+                stride=1,
+                padding=0,
+                act=None,
+                param_attr=ParamAttr(
+                    name=self.name + "yolo_output.{}.conv.weights".format(i)),
+                bias_attr=ParamAttr(
+                    regularizer=L2Decay(0.),
+                    name=self.name + "yolo_output.{}.conv.bias".format(i)))
+            # fluid.layers.Print(layer)
+            outputs.append(layer)
 
         return outputs
 
