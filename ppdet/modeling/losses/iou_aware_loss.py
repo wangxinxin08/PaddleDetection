@@ -78,7 +78,7 @@ class IouAwareLoss(IouLoss):
             # iouk = iouk * tobj + iouk * obj_mask
             iouk = iouk * tobj
         iouk.stop_gradient = True
-        ioup = fluid.layers.sigmoid(ioup)
+
         loss_iou_aware = fluid.layers.cross_entropy(ioup, iouk, soft_label=True)
         loss_iou_aware = loss_iou_aware * self._loss_weight
         return loss_iou_aware
