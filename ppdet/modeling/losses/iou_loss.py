@@ -45,12 +45,14 @@ class IouLoss(object):
                  max_width=608,
                  ciou_term=False,
                  eiou_term=False,
+                 eiou_weight=0.4,
                  loss_square=True):
         self._loss_weight = loss_weight
         self._MAX_HI = max_height
         self._MAX_WI = max_width
         self.ciou_term = ciou_term
         self.eiou_term = eiou_term
+        self.eiou_weight = eiou_weight
         self.loss_square = loss_square
 
     def __call__(self,
@@ -86,6 +88,10 @@ class IouLoss(object):
             loss_iou = 1. - iouk * iouk
         else:
             loss_iou = 1. - iouk
+
+        if self.eiou_term:
+            eiou = self.get_eiou_term(pred, gt, eps)
+            loss_iou = loss_iou + self.eiou_weight * eiou
         loss_iou = loss_iou * self._loss_weight
 
         return loss_iou
@@ -110,9 +116,6 @@ class IouLoss(object):
         if self.ciou_term:
             ciou = self.get_ciou_term(pred, gt, iouk, eps)
             iouk = iouk - ciou
-        if self.eiou_term:
-            eiou = self.get_eiou_term(pred, gt, eps)
-            iouk = iouk - eiou
         return iouk
 
     def get_eiou_term(self, pred, gt, eps):

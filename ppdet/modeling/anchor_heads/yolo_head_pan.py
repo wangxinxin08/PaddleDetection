@@ -195,6 +195,8 @@ class YOLOv3HeadPAN(object):
             out = fluid.layers.leaky_relu(x=out, alpha=0.1)
         elif act == 'mish':
             out = fluid.layers.mish(out)
+        elif act == 'silu':
+            out = out * fluid.layers.sigmoid(out)
         return out
 
     def _softplus(self, input):
