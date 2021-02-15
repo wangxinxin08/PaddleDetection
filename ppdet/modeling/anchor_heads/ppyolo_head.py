@@ -140,7 +140,7 @@ def coord_conv(input,
 
 def basic_block(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
     c_ = int(ch_out * e)
-    conv1 = conv_bn(input, c_, 3, 3, 1, act=act, name=name + '.conv1')
+    conv1 = conv_bn(input, c_, 3, 1, 1, act=act, name=name + '.conv1')
     conv2 = conv_bn(conv1, ch_out, 1, 1, 0, act=act, name=name + ".conv2")
     if shortcut:
         ch_in = input.shape[1]
