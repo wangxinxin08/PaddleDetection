@@ -140,8 +140,8 @@ def coord_conv(input,
 
 def basic_block(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
     c_ = int(ch_out * e)
-    conv1 = conv_bn(input, c_, 1, 1, 0, act=act, name=name + '.conv1')
-    conv2 = conv_bn(conv1, ch_out, 3, 1, 1, act=act, name=name + ".conv2")
+    conv1 = conv_bn(input, c_, 3, 3, 1, act=act, name=name + '.conv1')
+    conv2 = conv_bn(conv1, ch_out, 1, 1, 0, act=act, name=name + ".conv2")
     if shortcut:
         ch_in = input.shape[1]
         if ch_in != ch_out:
@@ -149,13 +149,13 @@ def basic_block(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
                 input, ch_out, 1, 1, 0, act=act, name=name + '.short')
         else:
             short = input
-        output = short + conv2
+        output = fluid.layers.elementwise_add(x=short, y=conv2)
     else:
         output = conv2
     return output
 
 
-def spp(input, ch_out, act='silu', shortcut=False, name=""):
+def spp(input, ch_out, act='silu', name=""):
     output1 = input
     output2 = fluid.layers.pool2d(
         input=output1,
@@ -181,8 +181,6 @@ def spp(input, ch_out, act='silu', shortcut=False, name=""):
     output = fluid.layers.concat(
         input=[output1, output2, output3, output4], axis=1)
     output = conv_bn(output, ch_out, 1, 1, 0, act=act, name=name)
-    if shortcut:
-        output = output + input
     return output
 
 
@@ -254,7 +252,7 @@ class PPYOLOHead(object):
                 [
                     [2, conv_bn, [512, 1, 1, 0, act]],  #3
                     [-1, basic_block, [512, 2, act, True]],  #4
-                    [-1, spp, [512, act, False]],  #5
+                    [-1, spp, [512, act]],  #5
                     [-1, basic_block, [512, 2, act, True]]  #6 P5
                 ],
                 [
