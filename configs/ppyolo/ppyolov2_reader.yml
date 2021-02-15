@@ -68,7 +68,7 @@ EvalReader:
     - !DecodeImage
       to_rgb: True
     - !ResizeImage
-      target_size: 608
+      target_size: 640
       interp: 2
     - !NormalizeImage
       mean: [0.485, 0.456, 0.406]
