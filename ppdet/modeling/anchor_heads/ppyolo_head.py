@@ -222,8 +222,8 @@ class PPYOLOHead(object):
     __shared__ = ['num_classes', 'weight_prefix_name']
 
     def __init__(self,
-                 neck_cfg=None,
-                 save_idx=None,
+                 fpn_cfg=None,
+                 pan_cfg=None,
                  head_cfg=None,
                  act='silu',
                  norm_decay=0.,
@@ -233,6 +233,9 @@ class PPYOLOHead(object):
                  anchor_masks=[[6, 7, 8], [3, 4, 5], [0, 1, 2]],
                  iou_aware=False,
                  iou_aware_factor=0.4,
+                 drop_block=False,
+                 block_size=3,
+                 keep_prob=0.9,
                  yolo_loss="PPYOLOLoss",
                  nms=MultiClassNMS(
                      score_threshold=0.01,
@@ -246,42 +249,55 @@ class PPYOLOHead(object):
                  scale_x_y=1.0):
         check_version("1.8.4")
         self.name = weight_prefix_name
-        if neck_cfg is None:
-            self.neck_cfg = [
-                # 0 block3
-                # 1 block4
-                # 2 block5
-                [-1, conv_bn, [512, 1, 1, 0, act]],  #3
-                [-1, basic_block, [512, 2, act, True]],  #4
-                [-1, spp, [512, act, False]],  #5
-                [-1, basic_block, [512, 2, act, True]],  #6 P5
-                [-1, conv_bn, [256, 1, 1, 0, act]],  #7 transition
-                [-1, upsample, [2]],  #8 upsample
-                [[-1, 1], concat, [1]],  #9 concat
-                [-1, conv_bn, [256, 1, 1, 0, act]],  #10
-                [-1, basic_block, [256, 2, act, True]],  #11
-                [-1, basic_block, [256, 2, act, True]],  #12 P4
-                [-1, conv_bn, [128, 1, 1, 0, act]],  #13 transition
-                [-1, upsample, [2]],  #14 upsample
-                [[-1, 0], concat, [1]],  #15 concat
-                [-1, conv_bn, [128, 1, 1, 0, act]],  #16
-                [-1, basic_block, [128, 2, act, True]],  #17
-                [-1, basic_block, [128, 2, act, True]],  #18, C3
-                [-1, conv_bn, [256, 3, 2, 1, act]],  #19 downsample
-                [[-1, 4], concat, [1]],  #20 concat
-                [-1, conv_bn, [256, 1, 1, 0, act]],  #21
-                [-1, basic_block, [256, 2, act, True]],  #22
-                [-1, basic_block, [256, 2, act, True]],  #23, C4
-                [-1, conv_bn, [512, 3, 2, 1, act]],  #24 downsample
-                [[-1, 3], concat, [1]],  #25 concat
-                [-1, conv_bn, [512, 1, 1, 0, act]],  #26
-                [-1, basic_block, [512, 2, act, True]],  #27
-                [-1, basic_block, [512, 2, act, True]],  #28, C5
+        if fpn_cfg is None:
+            self.fpn_cfg = [
+                [
+                    [2, conv_bn, [512, 1, 1, 0, act]],  #3
+                    [-1, basic_block, [512, 2, act, True]],  #4
+                    [-1, spp, [512, act, False]],  #5
+                    [-1, basic_block, [512, 2, act, True]]  #6 P5
+                ],
+                [
+                    [-1, conv_bn, [256, 1, 1, 0, act]],  #7 transition
+                    [-1, upsample, [2]],  #8 upsample
+                    [[-1, 1], concat, [1]],  #9 concat
+                    [-1, conv_bn, [256, 1, 1, 0, act]],  #10
+                    [-1, basic_block, [256, 2, act, True]],  #11
+                    [-1, basic_block, [256, 2, act, True]]  #12 P4
+                ],
+                [
+                    [-1, conv_bn, [128, 1, 1, 0, act]],  #13 transition
+                    [-1, upsample, [2]],  #14 upsample
+                    [[-1, 0], concat, [1]]  #15 concat
+                ]
             ]
-            self.save_idx = [6, 12, 18, 23, 28]
         else:
-            self.neck_cfg = neck_cfg
-            self.save_idx = save_idx
+            self.fpn_cfg = fpn_cfg
+
+        if pan_cfg is None:
+            self.pan_cfg = [
+                [
+                    [0, conv_bn, [128, 1, 1, 0, act]],  #16
+                    [-1, basic_block, [128, 2, act, True]],  #17
+                    [-1, basic_block, [128, 2, act, True]]  # 18, C3
+                ],
+                [
+                    [-1, conv_bn, [256, 3, 2, 1, act]],  #19 downsample
+                    [[-1, 1], concat, [1]],  #20 concat
+                    [-1, conv_bn, [256, 1, 1, 0, act]],  #21
+                    [-1, basic_block, [256, 2, act, True]],  #22
+                    [-1, basic_block, [256, 2, act, True]],  #23, C4
+                ],
+                [
+                    [-1, conv_bn, [512, 3, 2, 1, act]],  #24 downsample
+                    [[-1, 2], concat, [1]],  #25 concat
+                    [-1, conv_bn, [512, 1, 1, 0, act]],  #26
+                    [-1, basic_block, [512, 2, act, True]],  #27
+                    [-1, basic_block, [512, 2, act, True]]  #28 C5
+                ]
+            ]
+        else:
+            self.pan_cfg = pan_cfg
 
         self.out_channels = [
             len(anchor_mask) * (num_classes + 6) for anchor_mask in anchor_masks
@@ -289,9 +305,9 @@ class PPYOLOHead(object):
         if head_cfg is None:
             self.head_cfg = [
                 # ch_outs
-                [7, conv_bn, [1024, 3, 1, 1, act]],
-                [6, conv_bn, [512, 3, 1, 1, act]],
-                [5, conv_bn, [256, 3, 1, 1, act]],
+                [2, conv_bn, [1024, 3, 1, 1, act]],
+                [1, conv_bn, [512, 3, 1, 1, act]],
+                [0, conv_bn, [256, 3, 1, 1, act]],
             ]
         else:
             self.head_cfg = head_cfg
@@ -300,6 +316,9 @@ class PPYOLOHead(object):
         self.num_classes = num_classes
         self.iou_aware = iou_aware
         self.iou_aware_factor = iou_aware_factor
+        self.drop_block = drop_block
+        self.keep_prob = keep_prob
+        self.block_size = block_size
         self.anchor_masks = anchor_masks
         self._parse_anchors(anchors)
         self.yolo_loss = yolo_loss
@@ -350,21 +369,40 @@ class PPYOLOHead(object):
         out_layer_num = len(self.anchor_masks)
         layers = input[:out_layer_num]
 
-        # for i in range(out_layer_num):
-        #     fluid.layers.Print(layers[i])
+        # fpn
+        for i, layer_cfg in enumerate(self.fpn_cfg):
+            for j, (f, m, args) in enumerate(layer_cfg):
+                if isinstance(f, int):
+                    inputs = output if f == -1 else layers[f]
+                else:
+                    inputs = [output if idx == -1 else layers[idx] for idx in f]
+                output = m(inputs,
+                           *args,
+                           name=self.name + 'yolo_fpn.{}.{}'.format(i, j))
+            if self.drop_block:
+                output = DropBlock(
+                    output,
+                    self.block_size,
+                    self.keep_prob,
+                    is_test=(not is_train))
+            layers[-i - 1] = output
 
-        # neck
-        pre = layers[-1]
-        for i, (f, m, args) in enumerate(self.neck_cfg):
-            if isinstance(f, int):
-                inputs = pre if f == -1 else layers[i]
-            else:
-                inputs = [pre if idx == -1 else layers[idx] for idx in f]
-            layer = m(inputs, *args, name=self.name + 'yolo_neck.{}'.format(i))
-            pre = layer
-            if i + 3 in self.save_idx:
-                # fluid.layers.Print(layer)
-                layers.append(layer)
+        for i, layer_cfg in enumerate(self.pan_cfg):
+            for j, (f, m, args) in enumerate(layer_cfg):
+                if isinstance(f, int):
+                    inputs = output if f == -1 else layers[f]
+                else:
+                    inputs = [output if idx == -1 else layers[idx] for idx in f]
+                output = m(inputs,
+                           *args,
+                           name=self.name + 'yolo_pan.{}.{}'.format(i, j))
+            if self.drop_block:
+                output = DropBlock(
+                    output,
+                    self.block_size,
+                    self.keep_prob,
+                    is_test=(not is_train))
+            layers[i] = output
 
         # head
         for i, (f, m, args) in enumerate(self.head_cfg):

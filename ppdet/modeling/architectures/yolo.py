@@ -117,7 +117,7 @@ class YOLOv3(object):
             downsample = 32
             for k, mask in zip(targets_def.keys(), self.yolo_head.anchor_masks):
                 targets_def[k]['shape'][1] = len(mask)
-                targets_def[k]['shape'][2] = 5 + self.yolo_head.num_classes
+                targets_def[k]['shape'][2] = 6 + self.yolo_head.num_classes
                 targets_def[k]['shape'][3] = image_shape[
                     -2] // downsample if image_shape[-2] else None
                 targets_def[k]['shape'][4] = image_shape[
