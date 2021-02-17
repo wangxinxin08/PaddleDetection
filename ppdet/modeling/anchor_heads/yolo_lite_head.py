@@ -25,12 +25,54 @@ from paddle.fluid.initializer import MSRAInitializer, ConstantInitializer
 
 from ppdet.modeling.ops import MultiClassNMS, MultiClassSoftNMS, MatrixNMS
 from ppdet.modeling.losses.yolo_loss import YOLOv3Loss
-from ppdet.modeling.backbones.mobilenet_v2 import conv_bn
 from ppdet.core.workspace import register
 from collections import Sequence
 from ppdet.utils.check import check_version
 
 __all__ = ['YOLOLiteHead']
+
+
+def conv_bn(input,
+            ch_out,
+            filter_size,
+            stride,
+            padding,
+            groups=1,
+            act='relu',
+            name=''):
+    conv = fluid.layers.conv2d(
+        input=input,
+        num_filters=ch_out,
+        filter_size=filter_size,
+        stride=stride,
+        padding=padding,
+        groups=groups,
+        act=None,
+        param_attr=ParamAttr(
+            initializer=MSRAInitializer(uniform=False),
+            name=name + ".conv.weights"),
+        bias_attr=False)
+
+    bn_name = name + ".bn"
+    bn_param_attr = ParamAttr(name=bn_name + '.scale')
+    bn_bias_attr = ParamAttr(name=bn_name + '.offset')
+
+    out = fluid.layers.batch_norm(
+        input=conv,
+        act=None,
+        param_attr=bn_param_attr,
+        bias_attr=bn_bias_attr,
+        moving_mean_name=bn_name + '.mean',
+        moving_variance_name=bn_name + '.var')
+
+    if act == 'leaky':
+        out = fluid.layers.leaky_relu(x=out, alpha=0.1)
+    elif act == 'relu':
+        out = fluid.layers.relu(out)
+    elif act == 'relu6':
+        out = fluid.layers.relu6(out)
+
+    return out
 
 
 def conv(input,
@@ -39,7 +81,7 @@ def conv(input,
          stride,
          padding,
          groups=1,
-         act='relu',
+         act=None,
          name=''):
     out = fluid.layers.conv2d(
         input=input,
@@ -81,6 +123,7 @@ class YOLOLiteHead(object):
     def __init__(self,
                  neck_cfg=None,
                  head_cfg=None,
+                 act='relu',
                  num_classes=80,
                  anchors=[[10, 13], [16, 30], [33, 23], [30, 61], [62, 45],
                           [59, 119], [116, 90], [156, 198], [373, 326]],
@@ -114,26 +157,25 @@ class YOLOLiteHead(object):
                 # from, func, args
                 # block5
                 # block4
-                [0, conv_bn, [1280, 3, 1, 1, 1280, 'relu']],  # 2
-                [-1, conv_bn, [576, 1, 1, 0, 1, 'relu']],  # 3 C5
+                [0, conv_bn, [1280, 3, 1, 1, 1280, act]],  # 2
+                [-1, conv_bn, [576, 1, 1, 0, 1, act]],  # 3 C5
                 [-1, upsample, [2, ]],  # 4
-                [1, conv_bn, [576, 3, 1, 1, 576, 'relu']],  # 5
-                [-1, conv_bn, [576, 1, 1, 0, 1, 'relu']],  # 6
+                [1, conv_bn, [576, 3, 1, 1, 576, act]],  # 5
+                [-1, conv_bn, [576, 1, 1, 0, 1, act]],  # 6
                 [[-1, 4], add, []],  # 7
-                [-1, conv_bn, [576, 3, 1, 1, 576, 'relu']],  # 8
-                [-1, conv_bn, [576, 1, 1, 0, 1, 'relu']]  # 9 C4
+                [-1, conv_bn, [576, 3, 1, 1, 576, act]],  # 8
+                [-1, conv_bn, [576, 1, 1, 0, 1, act]]  # 9 C4
             ]
         else:
             self.neck_cfg = neck_cfg
 
-        self.out_channels = [
-            len(anchor_mask) * (num_classes + 5) for anchor_mask in anchor_masks
-        ]
         if head_cfg is None:
-            self.head_cfg = [
-                [3, conv, [self.out_channels[0], 1, 1, 0, 1, None]],
-                [9, conv, [self.out_channels[1], 1, 1, 0, 1, None]]
+            out_channels = [
+                len(anchor_mask) * (num_classes + 5)
+                for anchor_mask in anchor_masks
             ]
+            self.head_cfg = [[3, conv, [out_channels[0], 1, 1, 0, 1]],
+                             [9, conv, [out_channels[1], 1, 1, 0, 1]]]
         else:
             self.head_cfg = head_cfg
 

@@ -1,12 +1,12 @@
 architecture: YOLOv3
 use_gpu: true
 max_iters: 30000
-log_iter: 10
+log_iter: 100
 save_dir: output
 snapshot_iter: 1000
 metric: VOC
 map_type: 11point
-pretrain_weights: ''
+pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/MobileNetV2_ssld_pretrained.tar
 weights: output/yolov3_mobilenet_v2_voc/model_final
 num_classes: 20
 use_fine_grained_loss: false
@@ -17,13 +17,14 @@ YOLOv3:
 
 MobileNetV2:
   norm_type: sync_bn
+  scale: 1.0
 
 YOLOLiteHead:
-  neck_cfg:
   anchor_masks: [[3, 4, 5], [0, 1, 2]]
   anchors: [[20, 37], [49, 94], [73, 201],
             [143, 265], [153, 121], [280, 279]]
   downsample: [32, 16]
+  act: 'relu6'
   yolo_loss: YOLOv3Loss
   nms:
     background_label: -1
@@ -102,6 +103,7 @@ TrainReader:
     anchors: [[20, 37], [49, 94], [73, 201],
             [143, 265], [153, 121], [280, 279]]
     downsample_ratios: [32, 16]
+    num_classes: 20
   batch_size: 32
   shuffle: true
   drop_last: true
