@@ -1,9 +1,9 @@
 architecture: YOLOv3
 use_gpu: true
-max_iters: 500000
+max_iters: 900000
 log_smooth_window: 20
 save_dir: output
-snapshot_iter: 10000
+snapshot_iter: 5000
 metric: COCO
 pretrain_weights: https://paddle-imagenet-models-name.bj.bcebos.com/DarkNet53_pretrained.tar
 weights: output/yolov3_darknet/model_final
@@ -39,13 +39,13 @@ YOLOv3Loss:
   label_smooth: true
 
 LearningRate:
-  base_lr: 0.001
+  base_lr: 0.00025
   schedulers:
   - !PiecewiseDecay
     gamma: 0.1
     milestones:
-    - 400000
-    - 450000
+    - 710000
+    - 800000
   - !LinearWarmup
     start_factor: 0.
     steps: 4000
