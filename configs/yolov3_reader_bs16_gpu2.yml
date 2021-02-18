@@ -27,7 +27,7 @@ TrainReader:
     - !BboxXYXY2XYWH {}
   batch_transforms:
   - !RandomShape
-    sizes: [160, 256, 320, 384, 480]
+    sizes: [192, 224, 256, 288, 320, 352, 384]
     random_inter: True
   - !NormalizeImage
     mean: [0.485, 0.456, 0.406]
@@ -46,11 +46,11 @@ TrainReader:
               [30, 61], [62, 45], [59, 119],
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
-  batch_size: 8
+  batch_size: 16
   shuffle: true
-  mixup_epoch: 110
+  mixup_epoch: 55
   drop_last: true
-  worker_num: 8
+  worker_num: 4
   bufsize: 16
   use_process: true
 
