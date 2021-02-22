@@ -242,9 +242,33 @@ def main():
         time_cost = np.mean(time_stat)
         eta_sec = (cfg.max_iters - it) * time_cost
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
-        outs = exe.run(compiled_train_prog, fetch_list=train_values)
-        stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
+        extra_keys = []
+        save_keys = []
+        extra_keys += ['leaky_relu_1.tmp_0', 'leaky_relu_4.tmp_0']
+        save_keys += ['block1', 'block2']
+        extra_keys += [
+            'leaky_relu_9.tmp_0', 'leaky_relu_26.tmp_0', 'leaky_relu_43.tmp_0'
+        ]
+        save_keys += ['block3', 'block4', 'block5']
+        extra_keys += ['conv2d_58.tmp_1', 'conv2d_66.tmp_1', 'conv2d_74.tmp_1']
+        save_keys += ['head1', 'head2', 'head3']
+        extra_keys += [
+            'leaky_relu_56.tmp_0', 'leaky_relu_63.tmp_0', 'leaky_relu_70.tmp_0'
+        ]
+        save_keys += ['fpn1', 'fpn2', 'fpn3']
+        nk = len(extra_keys)
+        outs = exe.run(compiled_train_prog,
+                       fetch_list=train_values + extra_keys)
+        stats = {
+            k: np.array(v).mean()
+            for k, v in zip(train_keys, outs[:-nk - 1])
+        }
+        res = {k: (np.array(v), ) for k, v in zip(extra_keys, outs[-nk:])}
 
+        os.makedirs('npy_dir', exist_ok=True)
+        for extra_key, save_key in zip(extra_keys, save_keys):
+            path = os.path.join('npy_dir', '{}.npy'.format(save_key))
+            np.save(path, res[extra_key][0])
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
             if it % cfg.log_iter == 0:
@@ -256,7 +280,7 @@ def main():
         logs = train_stats.log()
         if it % cfg.log_iter == 0 and (not FLAGS.dist or trainer_id == 0):
             strs = 'iter: {}, lr: {:.6f}, {}, time: {:.3f}, eta: {}'.format(
-                it, np.mean(outs[-1]), logs, time_cost, eta)
+                it, np.mean(outs[-nk - 1]), logs, time_cost, eta)
             logger.info(strs)
 
         # NOTE : profiler tools, used for benchmark
@@ -313,6 +337,11 @@ def main():
 
 
 if __name__ == '__main__':
+    try:
+        import paddle
+        paddle.enable_static()
+    except:
+        pass
     parser = ArgsParser()
     parser.add_argument(
         "-r",
