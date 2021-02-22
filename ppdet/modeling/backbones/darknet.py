@@ -155,6 +155,7 @@ class DarkNet(object):
             input=conv,
             ch_out=conv.shape[1] * 2,
             name=self.prefix_name + "yolo_input.downsample")
+        fluid.layers.Print(fluid.layers.reduce_sum(downsample_))
         blocks = []
         for i, stage in enumerate(stages):
             block = self.layer_warp(
@@ -171,4 +172,5 @@ class DarkNet(object):
                     input=block,
                     ch_out=block.shape[1] * 2,
                     name=self.prefix_name + "stage.{}.downsample".format(i))
+                fluid.layers.Print(fluid.layers.reduce_sum(downsample_))
         return blocks

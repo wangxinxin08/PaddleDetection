@@ -344,6 +344,7 @@ class YOLOv3Head(object):
                 conv_block_num=self.conv_block_num,
                 name=self.prefix_name + "yolo_block.{}".format(i))
 
+            fluid.layers.Print(fluid.layers.reduce_sum(route))
             # out channel number = mask_num * (5 + class_num)
             if self.iou_aware:
                 num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
@@ -364,6 +365,7 @@ class YOLOv3Head(object):
                         regularizer=L2Decay(0.),
                         name=self.prefix_name +
                         "yolo_output.{}.conv.bias".format(i)))
+                fluid.layers.Print(fluid.layers.reduce_sum(block_out))
                 outputs.append(block_out)
 
             if i < len(blocks) - 1:
