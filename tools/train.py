@@ -257,6 +257,10 @@ def main():
         ]
         save_keys += ['fpn1', 'fpn2', 'fpn3']
         nk = len(extra_keys)
+        for i in range(nk):
+            extra_keys.append(extra_keys[i] + '@GRAD')
+            save_keys.append(save_keys[i] + '@GRAD')
+        nk = nk * 2
         outs = exe.run(compiled_train_prog,
                        fetch_list=train_values + extra_keys)
         stats = {
