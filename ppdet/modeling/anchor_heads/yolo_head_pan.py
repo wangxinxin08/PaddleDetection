@@ -102,9 +102,12 @@ class YOLOv3HeadPAN(object):
         self.scale_x_y = scale_x_y
         self.clip_bbox = clip_bbox
 
-    def _create_tensor_from_numpy(self, numpy_array):
+    def _create_tensor_from_numpy(self, numpy_array, name=None):
         paddle_array = fluid.layers.create_global_var(
-            shape=numpy_array.shape, value=0., dtype=numpy_array.dtype)
+            shape=numpy_array.shape,
+            value=0.,
+            dtype=numpy_array.dtype,
+            name=name)
         fluid.layers.assign(numpy_array, paddle_array)
         return paddle_array
 
@@ -499,8 +502,16 @@ class YOLOv3HeadPAN(object):
         grid = fluid.layers.stack([xv, yv], axis=2)
         return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
 
-    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh,
-                 downsample_ratio, clip_bbox, scale_x_y):
+    def yolo_box(self,
+                 x,
+                 img_size,
+                 anchors,
+                 class_num,
+                 conf_thresh,
+                 downsample_ratio,
+                 clip_bbox,
+                 scale_x_y,
+                 name=''):
         shape = fluid.layers.shape(x)
         b, c, h, w = shape[0], shape[1], shape[2], shape[3]
         na = len(anchors) // 2
@@ -508,7 +519,8 @@ class YOLOv3HeadPAN(object):
         x = fluid.layers.reshape(x, [b, na, no, h, w])
         x = fluid.layers.transpose(x, perm=[0, 1, 3, 4, 2])
         anchors = np.array(anchors).reshape((1, na, 1, 1, 2))
-        anchors = self._create_tensor_from_numpy(anchors)
+        anchors = self._create_tensor_from_numpy(
+            anchors.astype(np.float32), name='anchors' + name)
         grid = self._make_grid(w, h)
         bias_x_y = 0.5 * (scale_x_y - 1)
         im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
@@ -591,7 +603,8 @@ class YOLOv3HeadPAN(object):
                 conf_thresh=self.nms.score_threshold,
                 downsample_ratio=self.downsample[i],
                 clip_bbox=self.clip_bbox,
-                scale_x_y=scale_x_y)
+                scale_x_y=scale_x_y,
+                name=i)
             boxes.append(box)
             scores.append(fluid.layers.transpose(score, perm=[0, 2, 1]))
 

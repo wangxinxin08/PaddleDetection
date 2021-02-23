@@ -195,21 +195,6 @@ class IouLoss(object):
         shape_fmp = fluid.layers.shape(dcx)
         shape_fmp.stop_gradient = True
         # generate the grid_w x grid_h center of feature map
-        idx_i = np.array([[i for i in range(grid_x)]])
-        idx_j = np.array([[j for j in range(grid_y)]]).transpose()
-        gi_np = np.repeat(idx_i, grid_y, axis=0)
-        gi_np = np.reshape(gi_np, newshape=[1, 1, grid_y, grid_x])
-        gi_np = np.tile(gi_np, reps=[batch_size, an_num, 1, 1])
-        gj_np = np.repeat(idx_j, grid_x, axis=1)
-        gj_np = np.reshape(gj_np, newshape=[1, 1, grid_y, grid_x])
-        gj_np = np.tile(gj_np, reps=[batch_size, an_num, 1, 1])
-        gi_max = self._create_tensor_from_numpy(gi_np.astype(np.float32))
-        gi = fluid.layers.crop(x=gi_max, shape=dcx)
-        gi.stop_gradient = True
-        gj_max = self._create_tensor_from_numpy(gj_np.astype(np.float32))
-        gj = fluid.layers.crop(x=gj_max, shape=dcx)
-        gj.stop_gradient = True
-
         grid_x_act = fluid.layers.cast(shape_fmp[3], dtype="float32")
         grid_x_act.stop_gradient = True
         grid_y_act = fluid.layers.cast(shape_fmp[2], dtype="float32")
