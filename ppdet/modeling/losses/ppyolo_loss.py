@@ -148,63 +148,41 @@ class PPYOLOLoss(object):
         assert len(outputs) == len(targets), \
             "YOLOv3 output layer number not equal target number"
 
-        loss_xys, loss_whs, loss_objs, loss_clss = [], [], [], []
-        if self._iou_loss is not None:
-            loss_ious = []
-        if self._iou_aware_loss is not None:
-            loss_iou_awares = []
+        loss_ious, loss_iou_awares, loss_clss = [], [], []
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
             downsample = self.downsample[i]
             an_num = len(anchors) // 2
-            if self._iou_aware_loss is not None:
-                ioup, output = self._split_ioup(output, an_num, num_classes)
             x, y, w, h, obj, cls = self._split_output(output, an_num,
                                                       num_classes)
             tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
 
-            tscale_tobj = tscale * tobj
-
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
 
-            if self._iou_loss is not None:
-                loss_iou = self._iou_loss(x, y, w, h, tx, ty, tw, th, anchors,
-                                          downsample, self._train_batch_size,
-                                          scale_x_y)
-                loss_iou = loss_iou * tscale_tobj
-                loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
-                loss_ious.append(fluid.layers.reduce_mean(loss_iou))
+            loss_iou = self._iou_loss(x, y, w, h, tx, ty, tw, th, anchors,
+                                      downsample, self._train_batch_size,
+                                      scale_x_y)
+            loss_iou = loss_iou * tobj
+            loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
+            loss_ious.append(fluid.layers.reduce_mean(loss_iou))
 
-            if self._iou_aware_loss is not None:
-                loss_iou_aware = self._iou_aware_loss(
-                    ioup, x, y, w, h, tx, ty, tw, th, anchors, downsample,
-                    self._train_batch_size, scale_x_y)
-                loss_iou_aware = loss_iou_aware * tobj
-                loss_iou_aware = fluid.layers.reduce_sum(
-                    loss_iou_aware, dim=[1, 2, 3])
-                loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
-
-            loss_obj_pos, loss_obj_neg = self._calc_obj_loss(
-                output, obj, tobj, gt_box, self._train_batch_size, anchors,
-                num_classes, downsample, self._ignore_thresh, scale_x_y)
+            loss_iou_aware = self._iou_aware_loss(
+                obj, x, y, w, h, tx, ty, tw, th, anchors, downsample,
+                self._train_batch_size, scale_x_y, tobj)
+            loss_iou_aware = fluid.layers.reduce_sum(loss_iou_aware, dim=[1])
+            loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
 
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
             loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
-
-            loss_objs.append(
-                fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg))
             loss_clss.append(fluid.layers.reduce_mean(loss_cls))
 
         losses_all = {
-            "loss_obj": fluid.layers.sum(loss_objs),
             "loss_cls": fluid.layers.sum(loss_clss),
+            "loss_iou": fluid.layers.sum(loss_ious),
+            "loss_iou_aware": fluid.layers.sum(loss_iou_awares)
         }
-        if self._iou_loss is not None:
-            losses_all["loss_iou"] = fluid.layers.sum(loss_ious)
-        if self._iou_aware_loss is not None:
-            losses_all["loss_iou_aware"] = fluid.layers.sum(loss_iou_awares)
         return losses_all
 
     def _split_ioup(self, output, an_num, num_classes):

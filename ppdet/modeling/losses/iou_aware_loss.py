@@ -64,6 +64,7 @@ class IouAwareLoss(IouLoss):
                  downsample_ratio,
                  batch_size,
                  scale_x_y,
+                 tobj,
                  eps=1.e-10):
         '''
         Args:
@@ -81,8 +82,11 @@ class IouAwareLoss(IouLoss):
         gt = self._bbox_transform(tx, ty, tw, th, anchors, downsample_ratio,
                                   batch_size, True, scale_x_y, eps)
         iouk = self._iou(pred, gt, ioup, eps)
+        iouk = iouk * tobj
+        iouk = fluid.layers.reshape(iouk, [batch_size, -1])
         iouk.stop_gradient = True
-
-        loss_iou_aware = fluid.layers.cross_entropy(ioup, iouk, soft_label=True)
+        ioup = fluid.layers.reshape(ioup, [batch_size, -1])
+        loss_iou_aware = fluid.layers.sigmoid_cross_entropy_with_logits(ioup,
+                                                                        iouk)
         loss_iou_aware = loss_iou_aware * self._loss_weight
         return loss_iou_aware

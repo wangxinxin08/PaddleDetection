@@ -357,38 +357,38 @@ class Gt2YoloTargetV2(BaseOperator):
                     gj = int(gy * grid_h)
                     target[a_i, 0, gj, gi] = gx * grid_w - gi
                     target[a_i, 1, gj, gi] = gy * grid_h - gj
-                    target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
-                    target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
+                    target[a_i, 2, gj, gi] = gw * grid_w
+                    target[a_i, 3, gj, gi] = gh * grid_h
                     target[a_i, 4, gj, gi] = 2.0 - gw * gh
                     target[a_i, 5, gj, gi] = gs
                     target[a_i, int(6 + gcls), gj, gi] = 1.
 
                 # for [1, 0], [0, 1], [-1, 0], [0, 1]
-                # for a_i, g_i in zip(an_idx, gt_idx):
-                #     gx, gy, gw, gh, gcls, gs = gt_label[g_i]
-                #     gij = []
-                #     gx1, gy1 = gx * grid_w, gy * grid_h
-                #     gx2, gy2 = (1 - gx) * grid_w, (1 - gy) * grid_h
-                #     if gx1 % 1. < self.bias and gx1 > 1.:
-                #         gij.append([int(gx1) - 1, int(gy1)])
-                #     if gy1 % 1. < self.bias and gy1 > 1.:
-                #         gij.append([int(gx1), int(gy1) - 1])
-                #     if gx2 % 1. < self.bias and gx2 > 1.:
-                #         gij.append([int(gx1) + 1, int(gy1)])
-                #     if gy2 % 1. < self.bias and gy2 > 1.:
-                #         gij.append([int(gx1), int(gy1) + 1])
+                for a_i, g_i in zip(an_idx, gt_idx):
+                    gx, gy, gw, gh, gcls, gs = gt_label[g_i]
+                    gij = []
+                    gx1, gy1 = gx * grid_w, gy * grid_h
+                    gx2, gy2 = (1 - gx) * grid_w, (1 - gy) * grid_h
+                    if gx1 % 1. < self.bias and gx1 > 1.:
+                        gij.append([int(gx1) - 1, int(gy1)])
+                    if gy1 % 1. < self.bias and gy1 > 1.:
+                        gij.append([int(gx1), int(gy1) - 1])
+                    if gx2 % 1. < self.bias and gx2 > 1.:
+                        gij.append([int(gx1) + 1, int(gy1)])
+                    if gy2 % 1. < self.bias and gy2 > 1.:
+                        gij.append([int(gx1), int(gy1) + 1])
 
-                #     for gi, gj in gij:
-                #         if target[a_i, 5, gj, gi] <= 0. or \
-                #             abs(target[a_i, 0, gj, gi]) + abs(target[a_i, 1, gj, gi]) \
-                #             - abs(gx * grid_w - gi) - abs(gy * grid_h - gj) > 0.:
-                #             target[a_i, 0, gj, gi] = gx * grid_w - gi
-                #             target[a_i, 1, gj, gi] = gy * grid_h - gj
-                #             target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
-                #             target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
-                #             target[a_i, 4, gj, gi] = 2.0 - gw * gh
-                #             target[a_i, 5, gj, gi] = gs
-                #             target[a_i, int(6 + gcls), gj, gi] = 1.
+                    for gi, gj in gij:
+                        if target[a_i, 5, gj, gi] <= 0. or \
+                            abs(target[a_i, 0, gj, gi]) + abs(target[a_i, 1, gj, gi]) \
+                            - abs(gx * grid_w - gi) - abs(gy * grid_h - gj) > 0.:
+                            target[a_i, 0, gj, gi] = gx * grid_w - gi
+                            target[a_i, 1, gj, gi] = gy * grid_h - gj
+                            target[a_i, 2, gj, gi] = gw * grid_w
+                            target[a_i, 3, gj, gi] = gh * grid_h
+                            target[a_i, 4, gj, gi] = 2.0 - gw * gh
+                            target[a_i, 5, gj, gi] = 1.
+                            target[a_i, int(6 + gcls), gj, gi] = gs
 
                 sample['target{}'.format(i)] = target
         return samples

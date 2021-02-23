@@ -5,7 +5,7 @@ TrainReader:
   dataset:
     !COCODataSet
       image_dir: train2017
-      anno_path: annotations/instances_train2017.json
+      anno_path: annotations/instances_minitrain2017.json
       dataset_dir: dataset/coco
       with_background: false
   sample_transforms:
@@ -27,7 +27,7 @@ TrainReader:
     - !BboxXYXY2XYWH {}
   batch_transforms:
   - !RandomShape
-    sizes: [320, 352, 384, 416, 448, 480, 512, 544, 576, 608, 640]
+    sizes: [320, 352, 384, 416, 448, 480, 512, 544, 576, 608]
     random_inter: True
   - !NormalizeImage
     mean: [0.485, 0.456, 0.406]
@@ -40,12 +40,14 @@ TrainReader:
   # Gt2YoloTarget is only used when use_fine_grained_loss set as true,
   # this operator will be deleted automatically if use_fine_grained_loss
   # is set as false
-  - !Gt2YoloTarget
+  - !Gt2YoloTargetV2
     anchor_masks: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
     anchors: [[10, 13], [16, 30], [33, 23],
               [30, 61], [62, 45], [59, 119],
               [116, 90], [156, 198], [373, 326]]
     downsample_ratios: [32, 16, 8]
+    anchor_t: 4.
+    bias: 0.5
   batch_size: 12
   shuffle: true
   mixup_epoch: 25000
@@ -68,7 +70,7 @@ EvalReader:
     - !DecodeImage
       to_rgb: True
     - !ResizeImage
-      target_size: 640
+      target_size: 608
       interp: 2
     - !NormalizeImage
       mean: [0.485, 0.456, 0.406]
@@ -97,7 +99,7 @@ TestReader:
     - !DecodeImage
       to_rgb: True
     - !ResizeImage
-      target_size: 640
+      target_size: 608
       interp: 2
     - !NormalizeImage
       mean: [0.485, 0.456, 0.406]

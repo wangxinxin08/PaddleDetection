@@ -22,7 +22,7 @@ from paddle import fluid
 from paddle.fluid.param_attr import ParamAttr
 from paddle.fluid.regularizer import L2Decay
 
-from ppdet.modeling.ops import MultiClassNMS, MultiClassSoftNMS, MatrixNMS
+from ppdet.modeling.ops import MultiClassNMS, MultiClassSoftNMS, MatrixNMS, NumpyArrayInitializer
 from ppdet.modeling.losses.yolo_loss import YOLOv3Loss
 from ppdet.core.workspace import register
 from ppdet.modeling.ops import DropBlock
@@ -387,6 +387,16 @@ class YOLOv3HeadPAN(object):
                 assert mask < anchor_num, "anchor mask index overflow"
                 self.mask_anchors[-1].extend(anchors[mask])
 
+    def _init_bias(self, x, c_out, s, na, k):
+        fan_in = x.shape[1]
+        std = (1.0 / (fan_in * k * k))**0.5
+        bias = np.random.uniform(-std, std, size=c_out)
+        bias = np.reshape(bias, (na, -1))
+        bias[:, 4] += np.log(8 / (640 / s)**2)
+        bias[:, 5:] += np.log(0.6 / (self.num_classes - 0.99))
+        bias = np.reshape(bias, [-1])
+        return bias.astype(np.float32)
+
     def _get_outputs(self, input, is_train=True):
         """
         Get YOLOv3 head output
@@ -456,11 +466,11 @@ class YOLOv3HeadPAN(object):
                 name=self.prefix_name + 'yolo_output.{}.conv.0'.format(i))
 
             # out channel number = mask_num * (5 + class_num)
-            if self.iou_aware:
-                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
-            else:
-                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 5)
+            num_filters = len(self.anchor_masks[i]) * (self.num_classes + 5)
             with fluid.name_scope('yolo_output'):
+                bias = self._init_bias(block_out, num_filters,
+                                       self.downsample[i],
+                                       len(self.anchor_masks[i]), 1)
                 block_out = fluid.layers.conv2d(
                     input=block_out,
                     num_filters=num_filters,
@@ -473,12 +483,68 @@ class YOLOv3HeadPAN(object):
                         "yolo_output.{}.conv.1.weights".format(i)),
                     bias_attr=ParamAttr(
                         regularizer=L2Decay(0.),
+                        initializer=NumpyArrayInitializer(bias),
                         name=self.prefix_name +
                         "yolo_output.{}.conv.1.bias".format(i)))
                 outputs.append(block_out)
 
         outputs = outputs[::-1]
         return outputs
+
+    def _make_grid(self, nx, ny):
+        yv, xv = fluid.layers.meshgrid([
+            fluid.layers.range(0, ny, 1, 'float32'),
+            fluid.layers.range(0, nx, 1, 'float32')
+        ])
+        grid = fluid.layers.stack([xv, yv], axis=2)
+        return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
+
+    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh,
+                 downsample_ratio, clip_bbox, scale_x_y):
+        shape = fluid.layers.shape(x)
+        b, c, h, w = shape[0], shape[1], shape[2], shape[3]
+        na = len(anchors) // 2
+        no = class_num + 5
+        x = fluid.layers.reshape(x, [b, na, no, h, w])
+        x = fluid.layers.transpose(x, perm=[0, 1, 3, 4, 2])
+        anchors = np.array(anchors).reshape((1, na, 1, 1, 2))
+        anchors = self._create_tensor_from_numpy(anchors)
+        grid = self._make_grid(w, h)
+        bias_x_y = 0.5 * (scale_x_y - 1)
+        im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
+        im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
+        xc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 0:1]) - bias_x_y +
+              grid[:, :, :, :, 0:1]) / w
+        yc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 1:2]) - bias_x_y +
+              grid[:, :, :, :, 1:2]) / h
+        wc = (2 * fluid.layers.sigmoid(x[:, :, :, :, 2:3]))**2
+        wc = wc * anchors[:, :, :, :, 0:1] / (w * downsample_ratio)
+        hc = (2 * fluid.layers.sigmoid(x[:, :, :, :, 3:4]))**2
+        hc = hc * anchors[:, :, :, :, 1:2] / (h * downsample_ratio)
+        x1 = xc - wc * 0.5
+        y1 = yc - hc * 0.5
+        x2 = xc + wc * 0.5
+        y2 = yc + hc * 0.5
+        if clip_bbox:
+            x1 = fluid.layers.clip(x1, 0., 1.)
+            y1 = fluid.layers.clip(y1, 0., 1.)
+            x2 = fluid.layers.clip(x2, 0., 1.)
+            y2 = fluid.layers.clip(y2, 0., 1.)
+        x1 = x1 * im_w
+        y1 = y1 * im_h
+        x2 = x2 * im_w
+        y2 = y2 * im_h
+        bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
+
+        conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
+        mask = fluid.layers.cast(conf >= conf_thresh, 'float32')
+        conf = conf * mask
+        score = fluid.layers.sigmoid(x[:, :, :, :, 5:]) * conf
+        bbox = bbox * mask
+
+        bbox = fluid.layers.reshape(bbox, (b, -1, 4))
+        score = fluid.layers.reshape(score, (b, -1, class_num))
+        return bbox, score
 
     def get_loss(self, input, gt_box, gt_label, gt_score, targets):
         """
@@ -515,21 +581,15 @@ class YOLOv3HeadPAN(object):
         boxes = []
         scores = []
         for i, output in enumerate(outputs):
-            if self.iou_aware:
-                output = get_iou_aware_score(output,
-                                             len(self.anchor_masks[i]),
-                                             self.num_classes,
-                                             self.iou_aware_factor)
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
-            box, score = fluid.layers.yolo_box(
+            box, score = self.yolo_box(
                 x=output,
                 img_size=im_size,
                 anchors=self.mask_anchors[i],
                 class_num=self.num_classes,
                 conf_thresh=self.nms.score_threshold,
                 downsample_ratio=self.downsample[i],
-                name=self.prefix_name + "yolo_box" + str(i),
                 clip_bbox=self.clip_bbox,
                 scale_x_y=scale_x_y)
             boxes.append(box)

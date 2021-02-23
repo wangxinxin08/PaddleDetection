@@ -37,31 +37,35 @@ YOLOv3HeadPAN:
   coord_conv: true
   iou_aware: true
   iou_aware_factor: 0.4
-  scale_x_y: 1.05
+  scale_x_y: 2.
   spp: true
   act: 'mish'
-  yolo_loss: YOLOv3Loss
+  yolo_loss: PPYOLOLoss
   nms: MatrixNMS
   drop_block: true
   spp_stage: 0
 
-YOLOv3Loss:
+PPYOLOLoss:
   ignore_thresh: 0.7
-  scale_x_y: 1.05
+  scale_x_y: 2.
   label_smooth: false
   use_fine_grained_loss: true
   iou_loss: IouLoss
   iou_aware_loss: IouAwareLoss
 
 IouLoss:
-  loss_weight: 2.5
-  max_height: 640
-  max_width: 640
+  loss_weight: 1.0
+  max_height: 608
+  max_width: 608
+  eiou_term: true
+  eiou_weight: 1.0
+  loss_square: false
 
 IouAwareLoss:
-  loss_weight: 1.0
-  max_height: 640
-  max_width: 640
+  loss_weight: 2.0
+  max_height: 608
+  max_width: 608
+  ciou_term: false
 
 MatrixNMS:
     background_label: -1
