@@ -604,7 +604,7 @@ class YOLOv3HeadPAN(object):
                 downsample_ratio=self.downsample[i],
                 clip_bbox=self.clip_bbox,
                 scale_x_y=scale_x_y,
-                name=i)
+                name=str(i))
             boxes.append(box)
             scores.append(fluid.layers.transpose(score, perm=[0, 2, 1]))
 
