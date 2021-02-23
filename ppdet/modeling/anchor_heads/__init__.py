@@ -22,6 +22,7 @@ from . import fcos_head
 from . import corner_head
 from . import efficient_head
 from . import ttf_head
+from . import ppyolo_head
 
 from .yolo_head_pan import *
 from .rpn_head import *
@@ -31,3 +32,4 @@ from .fcos_head import *
 from .corner_head import *
 from .efficient_head import *
 from .ttf_head import *
+from .ppyolo_head import *

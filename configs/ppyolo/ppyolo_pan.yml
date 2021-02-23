@@ -39,7 +39,7 @@ YOLOv3HeadPAN:
   iou_aware_factor: 0.4
   scale_x_y: 1.05
   spp: true
-  act: 'silu'
+  act: 'mish'
   yolo_loss: YOLOv3Loss
   nms: MatrixNMS
   drop_block: true

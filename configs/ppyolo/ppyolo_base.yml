@@ -15,7 +15,7 @@ ema_decay: 0.9998
 
 YOLOv3:
   backbone: ResNet
-  yolo_head: YOLOv3HeadPAN
+  yolo_head: PPYOLOHead
   use_fine_grained_loss: true
 
 ResNet:
@@ -28,35 +28,23 @@ ResNet:
   variant: d
   dcn_v2_stages: [5]
 
-YOLOv3HeadPAN:
+PPYOLOHead:
   anchor_masks: [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
   anchors: [[10, 13], [16, 30], [33, 23],
             [30, 61], [62, 45], [59, 119],
             [116, 90], [156, 198], [373, 326]]
   norm_decay: 0.
-  coord_conv: true
   iou_aware: true
   iou_aware_factor: 0.4
-  scale_x_y: 2.
-  spp: true
-  act: 'silu'
+  scale_x_y: 1.05
+  act: 'mish'
   yolo_loss: YOLOv3Loss
-  # yolo_loss: PPYOLOLoss
   nms: MatrixNMS
   drop_block: true
-  spp_stage: 0
-
-# PPYOLOLoss:
-#   ignore_thresh: 0.7
-#   scale_x_y: 1.05
-#   label_smooth: false
-#   use_fine_grained_loss: true
-#   iou_loss: IouLoss
-#   iou_aware_loss: IouAwareLoss
 
 YOLOv3Loss:
   ignore_thresh: 0.7
-  scale_x_y: 2.
+  scale_x_y: 1.05
   label_smooth: false
   use_fine_grained_loss: true
   iou_loss: IouLoss
