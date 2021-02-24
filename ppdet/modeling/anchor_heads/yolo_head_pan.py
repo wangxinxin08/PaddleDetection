@@ -330,6 +330,7 @@ class YOLOv3HeadPAN(object):
         return conv
 
     def pan_module(self, input, filter_list, is_test=True, name=None):
+        fpn_feats = input[0:1]
         for i in range(1, len(input)):
             conv_left = input[i]
             # ch_out = input[i].shape[1] // 4
@@ -359,7 +360,11 @@ class YOLOv3HeadPAN(object):
                 filter_list=filter_list,
                 is_test=is_test,
                 name=name + '.stack_conv.{}'.format(i))
-        return input
+            if i == 1:
+                fpn_feats.append(input[i])
+            else:
+                fpn_feats.append(pan_out)
+        return input, fpn_feats
 
     def _upsample(self, input, scale=2, name=None):
         out = fluid.layers.resize_nearest(
@@ -409,11 +414,45 @@ class YOLOv3HeadPAN(object):
             blocks[spp_stage],
             is_test=(not is_train),
             name=self.prefix_name + "spp_module")
-        blocks = self.pan_module(
+        blocks, fpn_feats = self.pan_module(
             blocks,
             filter_list=filter_list,
             is_test=(not is_train),
             name=self.prefix_name + "pan_module")
+
+        fpn_outputs = []
+        for i, block in enumerate(fpn_feats):
+            block = self._add_coord(block, is_test=(not is_train))
+            block_out = self._conv_bn(
+                block,
+                ch_out=1024 // (2**i),
+                filter_size=3,
+                stride=1,
+                padding=1,
+                act=self.act,
+                name=self.prefix_name + 'yolo_fpn_output.{}.conv.0'.format(i))
+
+            if self.iou_aware:
+                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 6)
+            else:
+                num_filters = len(self.anchor_masks[i]) * (self.num_classes + 5)
+
+            with fluid.name_scope('yolo_fpn_output'):
+                block_out = fluid.layers.conv2d(
+                    input=block_out,
+                    num_filters=num_filters,
+                    filter_size=1,
+                    stride=1,
+                    padding=0,
+                    act=None,
+                    param_attr=ParamAttr(
+                        name=self.prefix_name +
+                        "yolo_fpn_output.{}.conv.1.weights".format(i)),
+                    bias_attr=ParamAttr(
+                        regularizer=L2Decay(0.),
+                        name=self.prefix_name +
+                        "yolo_fpn_output.{}.conv.1.bias".format(i)))
+                fpn_outputs.append(block_out)
 
         # whether add reverse
         # reverse order back to input
@@ -478,7 +517,7 @@ class YOLOv3HeadPAN(object):
                 outputs.append(block_out)
 
         outputs = outputs[::-1]
-        return outputs
+        return outputs, fpn_outputs
 
     def get_loss(self, input, gt_box, gt_label, gt_score, targets):
         """
@@ -493,12 +532,22 @@ class YOLOv3HeadPAN(object):
         Returns:
             loss (Variable): The loss Variable of YOLOv3 network.
         """
-        outputs = self._get_outputs(input, is_train=True)
+        outputs, fpn_outputs = self._get_outputs(input, is_train=True)
 
-        return self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
-                              self.anchors, self.anchor_masks,
-                              self.mask_anchors, self.num_classes,
-                              self.prefix_name)
+        pan_loss = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
+                                  self.anchors, self.anchor_masks,
+                                  self.mask_anchors, self.num_classes,
+                                  self.prefix_name)
+
+        fpn_loss = self.yolo_loss(fpn_outputs, gt_box, gt_label, gt_score,
+                                  targets, self.anchors, self.anchor_masks,
+                                  self.mask_anchors, self.num_classes,
+                                  self.prefix_name)
+        loss = dict()
+        for k in fpn_loss:
+            loss[k] = pan_loss[k] + 0.1 * fpn_loss[k]
+
+        return loss
 
     def get_prediction(self, input, im_size, exclude_nms=False):
         """
@@ -510,7 +559,7 @@ class YOLOv3HeadPAN(object):
             pred (Variable): The prediction result after non-max suppress.
         """
 
-        outputs = self._get_outputs(input, is_train=False)
+        outputs, _ = self._get_outputs(input, is_train=False)
 
         boxes = []
         scores = []
