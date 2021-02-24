@@ -54,7 +54,7 @@ PPYOLOLoss:
   iou_aware_loss: IouAwareLoss
 
 IouLoss:
-  loss_weight: 1.0
+  loss_weight: 0.05
   max_height: 608
   max_width: 608
   eiou_term: true
@@ -62,7 +62,7 @@ IouLoss:
   loss_square: false
 
 IouAwareLoss:
-  loss_weight: 2.0
+  loss_weight: 1.0
   max_height: 608
   max_width: 608
   ciou_term: false

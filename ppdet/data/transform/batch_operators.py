@@ -360,8 +360,8 @@ class Gt2YoloTargetV2(BaseOperator):
                     target[a_i, 2, gj, gi] = gw * grid_w
                     target[a_i, 3, gj, gi] = gh * grid_h
                     target[a_i, 4, gj, gi] = 2.0 - gw * gh
-                    target[a_i, 5, gj, gi] = gs
-                    target[a_i, int(6 + gcls), gj, gi] = 1.
+                    target[a_i, 5, gj, gi] = 1.
+                    target[a_i, int(6 + gcls), gj, gi] = gs
 
                 # for [1, 0], [0, 1], [-1, 0], [0, 1]
                 for a_i, g_i in zip(an_idx, gt_idx):
