@@ -208,6 +208,27 @@ def stack_conv(input, *args, **kwargs):
     return output
 
 
+def C3(input, ch_out, act, use_spp=False, name=""):
+    c_ = ch_out // 2
+    cv1 = conv_bn(input, c_, 1, 1, 0, act, name=name + ".left")
+    cv2 = conv_bn(input, c_, 1, 1, 0, act, name=name + ".right")
+    if use_spp:
+        cfg = [['basic_block', [c_, 1, act, False]],
+               ['spp', [c_, 1, act, False]],
+               ['basic_block', [c_, 1, act, False]]]
+    else:
+        cfg = [['basic_block', [c_, 1, act, False]],
+               ['basic_block', [c_, 1, act, False]],
+               ['basic_block', [c_, 1, act, False]]]
+
+    for i, (m, args) in enumerate(cfg):
+        cv1 = eval(m)(cv1, *args, name=name + ".left.{}".format(i))
+
+    cv = fluid.layers.concat([cv1, cv2], 1)
+    cv = conv_bn(cv, ch_out, 1, 1, 0, act, name=name)
+    return cv
+
+
 @register
 class PPYOLOHead(object):
     """
@@ -253,48 +274,33 @@ class PPYOLOHead(object):
         self.name = weight_prefix_name
         if fpn_cfg is None:
             self.fpn_cfg = [
+                [[2, 'C3', [1024, act, True]]  # P3
+                 ],
                 [
-                    [2, 'basic_block', [1024, 0.5, act, True]],  #3
-                    [-1, 'spp', [1024, 0.5, act, False]],  #5
-                    [-1, 'basic_block', [1024, 0.5, act, True]]  #6 P5
+                    [-1, 'conv_bn', [256, 1, 1, 0, act]],
+                    [-1, 'upsample', [2]],
+                    [[-1, 1], 'concat', [1]],
+                    [-1, 'C3', [512, act, False]]  # P4
                 ],
-                [
-                    [-1, 'conv_bn', [256, 1, 1, 0, act]],  #7 transition
-                    [-1, 'upsample', [2]],  #8 upsample
-                    [[-1, 1], 'concat', [1]],  #9 concat
-                    [-1, 'basic_block', [512, 0.5, act, True]],  #10
-                    [-1, 'basic_block', [512, 0.5, act, True]],  #11
-                    [-1, 'basic_block', [512, 0.5, act, True]]  #12 P4
-                ],
-                [
-                    [-1, 'conv_bn', [128, 1, 1, 0, act]],  #13 transition
-                    [-1, 'upsample', [2]],  #14 upsample
-                    [[-1, 0], 'concat', [1]]  #15 concat
-                ]
+                [[-1, 'conv_bn', [128, 1, 1, 0, act]], [-1, 'upsample', [2]],
+                 [[-1, 0], 'concat', [1]]]
             ]
         else:
             self.fpn_cfg = fpn_cfg
 
         if pan_cfg is None:
             self.pan_cfg = [
+                [[0, 'C3', [256, act, False]]  # C3
+                 ],
                 [
-                    [0, 'basic_block', [256, 0.5, act, True]],  #16
-                    [-1, 'basic_block', [256, 0.5, act, True]],  #17
-                    [-1, 'basic_block', [256, 0.5, act, True]]  # 18, C3
+                    [-1, 'conv_bn', [256, 3, 2, 1, act]],
+                    [[-1, 1], 'concat', [1]],
+                    [-1, 'C3', [512, act, False]],  # C4
                 ],
                 [
-                    [-1, 'conv_bn', [256, 3, 2, 1, act]],  #19 downsample
-                    [[-1, 1], 'concat', [1]],  #20 concat
-                    [-1, 'basic_block', [512, 0.5, act, True]],  #21
-                    # [-1, 'basic_block', [512, 0.5, act, True]],  #22
-                    [-1, 'basic_block', [512, 0.5, act, True]],  #23, C4
-                ],
-                [
-                    [-1, 'conv_bn', [512, 3, 2, 1, act]],  #24 downsample
-                    [[-1, 2], 'concat', [1]],  #25 concat
-                    [-1, 'basic_block', [1024, 0.5, act, True]],  #26
-                    # [-1, 'basic_block', [1024, 0.5, act, True]],  #27
-                    [-1, 'basic_block', [1024, 0.5, act, True]]  #28 C5
+                    [-1, 'conv_bn', [512, 3, 2, 1, act]],
+                    [[-1, 2], 'concat', [1]],
+                    [-1, 'C3', [1024, act, False]]  # C5
                 ]
             ]
         else:
