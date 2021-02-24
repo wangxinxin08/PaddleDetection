@@ -181,18 +181,18 @@ class PPYOLOLoss(object):
                 loss_iou, dim=[1, 2, 3]) / pos_num
             loss_ious.append(fluid.layers.reduce_sum(loss_iou))
 
-            loss_iou_aware = self._iou_aware_loss(
-                obj, x, y, w, h, tx, ty, tw, th, anchors, downsample,
-                self._train_batch_size, scale_x_y, tobj)
-            loss_iou_aware = fluid.layers.reduce_mean(
-                loss_iou_aware, dim=[1]) * balance[i]
-            loss_iou_awares.append(fluid.layers.reduce_sum(loss_iou_aware))
-
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
-            loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
+            loss_cls = fluid.layers.elementwise_mul(loss_cls, obj_mask, axis=0)
             loss_cls = fluid.layers.reduce_sum(
                 loss_cls, dim=[1, 2, 3, 4]) / pos_num / 80 * 0.5
             loss_clss.append(fluid.layers.reduce_sum(loss_cls))
+
+            loss_iou_aware = self._iou_aware_loss(
+                obj, x, y, w, h, tx, ty, tw, th, anchors, downsample,
+                self._train_batch_size, scale_x_y, tobj, obj_mask)
+            loss_iou_aware = fluid.layers.reduce_mean(
+                loss_iou_aware, dim=[1]) * balance[i]
+            loss_iou_awares.append(fluid.layers.reduce_sum(loss_iou_aware))
 
         losses_all = {
             "loss_cls": fluid.layers.sum(loss_clss),

@@ -86,6 +86,7 @@ EvalReader:
   drop_empty: false
   worker_num: 8
   bufsize: 4
+  use_process: true
 
 TestReader:
   inputs_def:

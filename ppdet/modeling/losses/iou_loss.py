@@ -177,8 +177,8 @@ class IouLoss(object):
         dist_union = (xc2 - xc1) * (xc2 - xc1) + (yc2 - yc1) * (yc2 - yc1)
         diou_term = dist_intersection / (dist_union + eps)
         # CIOU term
-        ar_gt = wg / hg
-        ar_pred = w / h
+        ar_gt = wg / (hg + eps)
+        ar_pred = w / (h + eps)
         arctan = fluid.layers.atan(ar_gt) - fluid.layers.atan(ar_pred)
         ar_loss = 4. / np.pi / np.pi * arctan * arctan
         alpha = ar_loss / (1 - iouk + ar_loss + eps)

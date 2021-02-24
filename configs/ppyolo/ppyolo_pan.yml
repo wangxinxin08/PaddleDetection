@@ -57,7 +57,7 @@ IouLoss:
   loss_weight: 0.05
   max_height: 608
   max_width: 608
-  eiou_term: true
+  ciou_term: true
   eiou_weight: 1.0
   loss_square: false
 
@@ -65,7 +65,7 @@ IouAwareLoss:
   loss_weight: 1.0
   max_height: 608
   max_width: 608
-  ciou_term: false
+  ciou_term: true
 
 MatrixNMS:
     background_label: -1
@@ -78,10 +78,10 @@ LearningRate:
   base_lr: 0.01
   schedulers:
   - !PiecewiseDecay
-    gamma: 0.1
+    gamma: 0.2
     milestones:
     - 50000
-    - 70000
+    - 80000
   - !LinearWarmup
     start_factor: 0.
     steps: 1000
