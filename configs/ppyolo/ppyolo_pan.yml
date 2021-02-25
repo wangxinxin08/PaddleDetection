@@ -54,7 +54,7 @@ PPYOLOLoss:
   iou_aware_loss: IouAwareLoss
 
 IouLoss:
-  loss_weight: 0.05
+  loss_weight: 1.0
   max_height: 608
   max_width: 608
   ciou_term: true
@@ -77,14 +77,11 @@ MatrixNMS:
 LearningRate:
   base_lr: 0.01
   schedulers:
-  - !PiecewiseDecay
-    gamma: 0.2
-    milestones:
-    - 50000
-    - 80000
-  - !LinearWarmup
-    start_factor: 0.
-    steps: 1000
+  - !OneCycleLR
+    warmup_factor: 0.0
+    warmup_step: 4000
+    decay_factor: 0.01
+    total_step: 90000
 
 OptimizerBuilder:
   optimizer:
