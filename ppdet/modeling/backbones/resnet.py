@@ -229,13 +229,14 @@ class ResNet(object):
             global_stats = True if self.freeze_norm else False
             out = fluid.layers.batch_norm(
                 input=conv,
-                act=act,
+                act=None,
                 name=bn_name + '.output.1',
                 param_attr=pattr,
                 bias_attr=battr,
                 moving_mean_name=bn_name + '_mean',
                 moving_variance_name=bn_name + '_variance',
                 use_global_stats=global_stats)
+            out = fluid.layers.mish(x=out)
             scale = fluid.framework._get_var(pattr.name)
             bias = fluid.framework._get_var(battr.name)
         elif self.norm_type == 'affine_channel':
@@ -327,10 +328,12 @@ class ResNet(object):
                 num_filters=c,
                 filter_size=k,
                 stride=s,
-                act=act,
+                act=None,
                 groups=g,
                 name=_name,
                 dcn_v2=(i == 1 and dcn_v2))
+            residual = fluid.layers.mish(x=residual)
+
         short = self._shortcut(
             input,
             num_filters * expand,
@@ -343,8 +346,9 @@ class ResNet(object):
                 input=residual, num_channels=num_filters, name='fc' + name)
         if gcb:
             residual = add_gc_block(residual, name=gcb_name, **self.gcb_params)
-        return fluid.layers.elementwise_add(
-            x=short, y=residual, act='relu', name=name + ".add.output.5")
+        add = fluid.layers.elementwise_add(
+            x=short, y=residual, act=None, name=name + ".add.output.5")
+        return fluid.layers.mish(x=add)
 
     def basicblock(self,
                    input,
@@ -448,8 +452,9 @@ class ResNet(object):
                 num_filters=c,
                 filter_size=k,
                 stride=s,
-                act='relu',
+                act=None,
                 name=_name)
+            input = fluid.layers.mish(x=input)
 
         output = fluid.layers.pool2d(
             input=input,
