@@ -269,6 +269,8 @@ class PPYOLOHead(object):
                  weight_prefix_name='',
                  downsample=[32, 16, 8],
                  clip_bbox=True,
+                 fpn_head=False,
+                 balance=0.05,
                  scale_x_y=1.0):
         check_version("1.8.4")
         self.name = weight_prefix_name
@@ -325,6 +327,8 @@ class PPYOLOHead(object):
             self.nms = MultiClassNMS(**nms)
         self.downsample = downsample
         self.scale_x_y = scale_x_y
+        self.fpn_head = fpn_head
+        self.balance = balance
         self.clip_bbox = clip_bbox
 
     def _parse_anchors(self, anchors):
@@ -386,6 +390,26 @@ class PPYOLOHead(object):
                     is_test=(not is_train))
             layers[-i - 1] = output
 
+        # fpn head
+        if self.fpn_head:
+            fpn_outputs = []
+            for i, inputs in enumerate(layers[::-1]):
+                layer = fluid.layers.conv2d(
+                    input=inputs,
+                    num_filters=self.out_channels[i],
+                    filter_size=1,
+                    stride=1,
+                    padding=0,
+                    act=None,
+                    param_attr=ParamAttr(
+                        name=self.name +
+                        "yolo_fpn_output.{}.conv.weights".format(i)),
+                    bias_attr=ParamAttr(
+                        regularizer=L2Decay(0.),
+                        name=self.name +
+                        "yolo_fpn_output.{}.conv.bias".format(i)))
+                fpn_outputs.append(layer)
+
         for i, layer_cfg in enumerate(self.pan_cfg):
             for j, (f, m, args) in enumerate(layer_cfg):
                 if isinstance(f, int):
@@ -403,7 +427,7 @@ class PPYOLOHead(object):
                     is_test=(not is_train))
             layers[i] = output
 
-        # head
+        # pan head
         for i, inputs in enumerate(layers[::-1]):
             layer = fluid.layers.conv2d(
                 input=inputs,
@@ -419,7 +443,7 @@ class PPYOLOHead(object):
                     name=self.name + "yolo_output.{}.conv.bias".format(i)))
             outputs.append(layer)
 
-        return outputs
+        return outputs, fpn_outputs if self.fpn_head else None
 
     def get_prediction(self, input, im_size, exclude_nms=False):
         """
@@ -434,7 +458,7 @@ class PPYOLOHead(object):
 
         """
 
-        outputs = self._get_outputs(input, is_train=False)
+        outputs, _ = self._get_outputs(input, is_train=False)
 
         boxes = []
         scores = []
@@ -487,8 +511,17 @@ class PPYOLOHead(object):
             loss (Variable): The loss Variable of YOLOv3 network.
 
         """
-        outputs = self._get_outputs(input, is_train=True)
+        outputs, fpn_outputs = self._get_outputs(input, is_train=True)
 
-        return self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
+        loss = self.yolo_loss(outputs, gt_box, gt_label, gt_score, targets,
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes, self.name)
+        if self.fpn_head:
+            fpn_loss = self.yolo_loss(fpn_outputs, gt_box, gt_label, gt_score,
+                                      targets, self.anchors, self.anchor_masks,
+                                      self.mask_anchors, self.num_classes,
+                                      self.name)
+            for k in fpn_loss:
+                loss[k] = loss[k] + self.balance * fpn_loss[k]
+
+        return loss

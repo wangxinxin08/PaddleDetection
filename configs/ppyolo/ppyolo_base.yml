@@ -41,6 +41,8 @@ PPYOLOHead:
   yolo_loss: YOLOv3Loss
   nms: MatrixNMS
   drop_block: true
+  fpn_head: true
+  balance: 0.05
 
 YOLOv3Loss:
   ignore_thresh: 0.7
@@ -54,13 +56,13 @@ IouLoss:
   loss_weight: 2.5
   # eiou_term: true
   # eiou_weight: 0.4
-  max_height: 640
-  max_width: 640
+  max_height: 608
+  max_width: 608
 
 IouAwareLoss:
   loss_weight: 1.0
-  max_height: 640
-  max_width: 640
+  max_height: 608
+  max_width: 608
 
 MatrixNMS:
     background_label: -1
