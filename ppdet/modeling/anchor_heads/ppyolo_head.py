@@ -274,7 +274,7 @@ class PPYOLOHead(object):
         self.name = weight_prefix_name
         if fpn_cfg is None:
             self.fpn_cfg = [
-                [[2, 'C3', [1280, act, True]]  # P3
+                [[2, 'C3', [1024, act, True]]  # P3
                  ],
                 [
                     [-1, 'conv_bn', [320, 1, 1, 0, act]],
@@ -300,7 +300,7 @@ class PPYOLOHead(object):
                 [
                     [-1, 'conv_bn', [640, 3, 2, 1, act]],
                     [[-1, 2], 'concat', [1]],
-                    [-1, 'C3', [1280, act, False]]  # C5
+                    [-1, 'C3', [1024, act, False]]  # C5
                 ]
             ]
         else:
