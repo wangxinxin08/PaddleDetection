@@ -274,15 +274,15 @@ class PPYOLOHead(object):
         self.name = weight_prefix_name
         if fpn_cfg is None:
             self.fpn_cfg = [
-                [[2, 'C3', [1024, act, True]]  # P3
+                [[2, 'C3', [1280, act, True]]  # P3
                  ],
                 [
-                    [-1, 'conv_bn', [256, 1, 1, 0, act]],
+                    [-1, 'conv_bn', [320, 1, 1, 0, act]],
                     [-1, 'upsample', [2]],
                     [[-1, 1], 'concat', [1]],
-                    [-1, 'C3', [512, act, False]]  # P4
+                    [-1, 'C3', [640, act, False]]  # P4
                 ],
-                [[-1, 'conv_bn', [128, 1, 1, 0, act]], [-1, 'upsample', [2]],
+                [[-1, 'conv_bn', [160, 1, 1, 0, act]], [-1, 'upsample', [2]],
                  [[-1, 0], 'concat', [1]]]
             ]
         else:
@@ -290,17 +290,17 @@ class PPYOLOHead(object):
 
         if pan_cfg is None:
             self.pan_cfg = [
-                [[0, 'C3', [256, act, False]]  # C3
+                [[0, 'C3', [320, act, False]]  # C3
                  ],
                 [
-                    [-1, 'conv_bn', [256, 3, 2, 1, act]],
+                    [-1, 'conv_bn', [320, 3, 2, 1, act]],
                     [[-1, 1], 'concat', [1]],
-                    [-1, 'C3', [512, act, False]],  # C4
+                    [-1, 'C3', [640, act, False]],  # C4
                 ],
                 [
-                    [-1, 'conv_bn', [512, 3, 2, 1, act]],
+                    [-1, 'conv_bn', [640, 3, 2, 1, act]],
                     [[-1, 2], 'concat', [1]],
-                    [-1, 'C3', [1024, act, False]]  # C5
+                    [-1, 'C3', [1280, act, False]]  # C5
                 ]
             ]
         else:

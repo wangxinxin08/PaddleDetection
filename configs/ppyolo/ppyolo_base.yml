@@ -54,13 +54,13 @@ IouLoss:
   loss_weight: 2.5
   # eiou_term: true
   # eiou_weight: 0.4
-  max_height: 608
-  max_width: 608
+  max_height: 640
+  max_width: 640
 
 IouAwareLoss:
   loss_weight: 1.0
-  max_height: 608
-  max_width: 608
+  max_height: 640
+  max_width: 640
 
 MatrixNMS:
     background_label: -1
