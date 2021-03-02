@@ -229,14 +229,13 @@ class ResNet(object):
             global_stats = True if self.freeze_norm else False
             out = fluid.layers.batch_norm(
                 input=conv,
-                act=None,
+                act=act,
                 name=bn_name + '.output.1',
                 param_attr=pattr,
                 bias_attr=battr,
                 moving_mean_name=bn_name + '_mean',
                 moving_variance_name=bn_name + '_variance',
                 use_global_stats=global_stats)
-            out = fluid.layers.mish(x=out)
             scale = fluid.framework._get_var(pattr.name)
             bias = fluid.framework._get_var(battr.name)
         elif self.norm_type == 'affine_channel':
@@ -317,8 +316,8 @@ class ResNet(object):
                 [num_filters * expand, 1, 1, None, 1, conv_name3]
             ]
         else:
-            conv_def = [[num_filters, 1, stride1, 'relu', 1, conv_name1],
-                        [num_filters, 3, stride2, 'relu', groups, conv_name2],
+            conv_def = [[num_filters, 1, stride1, 'mish', 1, conv_name1],
+                        [num_filters, 3, stride2, 'mish', groups, conv_name2],
                         [num_filters * expand, 1, 1, None, 1, conv_name3]]
 
         residual = input
@@ -328,12 +327,10 @@ class ResNet(object):
                 num_filters=c,
                 filter_size=k,
                 stride=s,
-                act=None,
+                act=act,
                 groups=g,
                 name=_name,
                 dcn_v2=(i == 1 and dcn_v2))
-            residual = fluid.layers.mish(x=residual)
-
         short = self._shortcut(
             input,
             num_filters * expand,
@@ -346,9 +343,8 @@ class ResNet(object):
                 input=residual, num_channels=num_filters, name='fc' + name)
         if gcb:
             residual = add_gc_block(residual, name=gcb_name, **self.gcb_params)
-        add = fluid.layers.elementwise_add(
-            x=short, y=residual, act=None, name=name + ".add.output.5")
-        return fluid.layers.mish(x=add)
+        return fluid.layers.elementwise_add(
+            x=short, y=residual, act='mish', name=name + ".add.output.5")
 
     def basicblock(self,
                    input,
@@ -383,7 +379,6 @@ class ResNet(object):
         Args:
             input (Variable): input variable.
             stage_num (int): the stage number, should be 2, 3, 4, 5
-
         Returns:
             The last variable in endpoint-th stage.
         """
@@ -452,9 +447,8 @@ class ResNet(object):
                 num_filters=c,
                 filter_size=k,
                 stride=s,
-                act=None,
+                act='mish',
                 name=_name)
-            input = fluid.layers.mish(x=input)
 
         output = fluid.layers.pool2d(
             input=input,
