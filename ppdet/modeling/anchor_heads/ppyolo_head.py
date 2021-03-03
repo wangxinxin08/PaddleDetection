@@ -270,7 +270,6 @@ class PPYOLOHead(object):
                  downsample=[32, 16, 8],
                  clip_bbox=True,
                  fpn_head=False,
-                 balance=0.05,
                  scale_x_y=1.0):
         check_version("1.8.4")
         self.name = weight_prefix_name
@@ -328,7 +327,6 @@ class PPYOLOHead(object):
         self.downsample = downsample
         self.scale_x_y = scale_x_y
         self.fpn_head = fpn_head
-        self.balance = balance
         self.clip_bbox = clip_bbox
 
     def _parse_anchors(self, anchors):
@@ -517,11 +515,19 @@ class PPYOLOHead(object):
                               self.anchors, self.anchor_masks,
                               self.mask_anchors, self.num_classes, self.name)
         if self.fpn_head:
-            fpn_loss = self.yolo_loss(fpn_outputs, gt_box, gt_label, gt_score,
-                                      targets, self.anchors, self.anchor_masks,
-                                      self.mask_anchors, self.num_classes,
-                                      self.name)
+            fpn_loss = self.yolo_loss(
+                fpn_outputs,
+                gt_box,
+                gt_label,
+                gt_score,
+                targets,
+                self.anchors,
+                self.anchor_masks,
+                self.mask_anchors,
+                self.num_classes,
+                self.name,
+                fpn_loss=True)
             for k in fpn_loss:
-                loss[k] = loss[k] + self.balance * fpn_loss[k]
+                loss[k] = loss[k] + fpn_loss[k]
 
         return loss

@@ -71,12 +71,22 @@ class YOLOv3Loss(object):
                 "config YOLOv3Loss.batch_size is deprecated, "
                 "training batch size should be set by TrainReader.batch_size")
 
-    def __call__(self, outputs, gt_box, gt_label, gt_score, targets, anchors,
-                 anchor_masks, mask_anchors, num_classes, prefix_name, second_head=False):
+    def __call__(self,
+                 outputs,
+                 gt_box,
+                 gt_label,
+                 gt_score,
+                 targets,
+                 anchors,
+                 anchor_masks,
+                 mask_anchors,
+                 num_classes,
+                 prefix_name,
+                 fpn_loss=False):
         if self._use_fine_grained_loss:
             return self._get_fine_grained_loss(
                 outputs, targets, gt_box, self._train_batch_size, num_classes,
-                mask_anchors, self._ignore_thresh, second_head)
+                mask_anchors, self._ignore_thresh, fpn_loss)
         else:
             losses = []
             for i, output in enumerate(outputs):
@@ -109,7 +119,7 @@ class YOLOv3Loss(object):
                                num_classes,
                                mask_anchors,
                                ignore_thresh,
-                               second_head,
+                               fpn_loss,
                                eps=1.e-10):
         """
         Calculate fine grained YOLOv3 loss
@@ -143,6 +153,7 @@ class YOLOv3Loss(object):
             loss_ious = []
         if self._iou_aware_loss is not None:
             loss_iou_awares = []
+        balance = [0.001, 0.05, 0.1]
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
             downsample = self.downsample[i]
@@ -157,6 +168,8 @@ class YOLOv3Loss(object):
 
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
+
+            weight = 1. if fpn_loss else balance[i]
 
             if (abs(scale_x_y - 1.0) < eps):
                 loss_x = fluid.layers.sigmoid_cross_entropy_with_logits(
@@ -186,7 +199,7 @@ class YOLOv3Loss(object):
                                           scale_x_y)
                 loss_iou = loss_iou * tscale_tobj
                 loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
-                loss_ious.append(fluid.layers.reduce_mean(loss_iou))
+                loss_ious.append(fluid.layers.reduce_mean(loss_iou) * weight)
 
             if self._iou_aware_loss is not None:
                 loss_iou_aware = self._iou_aware_loss(
@@ -195,7 +208,8 @@ class YOLOv3Loss(object):
                 loss_iou_aware = loss_iou_aware * tobj
                 loss_iou_aware = fluid.layers.reduce_sum(
                     loss_iou_aware, dim=[1, 2, 3])
-                loss_iou_awares.append(fluid.layers.reduce_mean(loss_iou_aware))
+                loss_iou_awares.append(
+                    fluid.layers.reduce_mean(loss_iou_aware) * weight)
 
             loss_obj_pos, loss_obj_neg = self._calc_obj_loss(
                 output, obj, tobj, gt_box, self._train_batch_size, anchors,
@@ -205,34 +219,22 @@ class YOLOv3Loss(object):
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
             loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
 
-            loss_xys.append(fluid.layers.reduce_mean(loss_x + loss_y))
-            loss_whs.append(fluid.layers.reduce_mean(loss_w + loss_h))
+            loss_xys.append(fluid.layers.reduce_mean(loss_x + loss_y) * weight)
+            loss_whs.append(fluid.layers.reduce_mean(loss_w + loss_h) * weight)
             loss_objs.append(
-                fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg))
-            loss_clss.append(fluid.layers.reduce_mean(loss_cls))
-        
-        if second_head==True:
-            losses_all = {
-            "loss_xy2": fluid.layers.sum(loss_xys),
-            "loss_wh2": fluid.layers.sum(loss_whs),
-            "loss_obj2": fluid.layers.sum(loss_objs),
-            "loss_cls2": fluid.layers.sum(loss_clss),
-            }
-            if self._iou_loss is not None:
-                losses_all["loss_iou2"] = fluid.layers.sum(loss_ious)
-            if self._iou_aware_loss is not None:
-                losses_all["loss_iou_aware2"] = fluid.layers.sum(loss_iou_awares)
-        else:
-            losses_all = {
+                fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg) * weight)
+            loss_clss.append(fluid.layers.reduce_mean(loss_cls) * weight)
+
+        losses_all = {
             "loss_xy": fluid.layers.sum(loss_xys),
             "loss_wh": fluid.layers.sum(loss_whs),
             "loss_obj": fluid.layers.sum(loss_objs),
             "loss_cls": fluid.layers.sum(loss_clss),
-            }
-            if self._iou_loss is not None:
-                losses_all["loss_iou"] = fluid.layers.sum(loss_ious)
-            if self._iou_aware_loss is not None:
-                losses_all["loss_iou_aware"] = fluid.layers.sum(loss_iou_awares)
+        }
+        if self._iou_loss is not None:
+            losses_all["loss_iou"] = fluid.layers.sum(loss_ious)
+        if self._iou_aware_loss is not None:
+            losses_all["loss_iou_aware"] = fluid.layers.sum(loss_iou_awares)
         return losses_all
 
     def _split_ioup(self, output, an_num, num_classes):

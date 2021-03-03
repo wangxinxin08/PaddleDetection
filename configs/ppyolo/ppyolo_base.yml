@@ -42,7 +42,6 @@ PPYOLOHead:
   nms: MatrixNMS
   drop_block: true
   fpn_head: true
-  balance: 0.05
 
 YOLOv3Loss:
   ignore_thresh: 0.7
