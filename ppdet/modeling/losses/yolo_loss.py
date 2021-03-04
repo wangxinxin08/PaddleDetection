@@ -153,7 +153,7 @@ class YOLOv3Loss(object):
             loss_ious = []
         if self._iou_aware_loss is not None:
             loss_iou_awares = []
-        balance = [0.001, 0.05, 0.1]
+        balance = [0.005, 0.01, 0.0]
         for i, (output, target,
                 anchors) in enumerate(zip(outputs, targets, mask_anchors)):
             downsample = self.downsample[i]
@@ -169,7 +169,7 @@ class YOLOv3Loss(object):
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
 
-            weight = 1. if fpn_loss else balance[i]
+            weight = balance[i] if fpn_loss else 1.
 
             if (abs(scale_x_y - 1.0) < eps):
                 loss_x = fluid.layers.sigmoid_cross_entropy_with_logits(

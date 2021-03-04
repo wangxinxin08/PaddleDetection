@@ -155,7 +155,7 @@ def basic_block(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
     return output
 
 
-def spp(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
+def spp_module(input, ch_out, e=0.5, act='silu', shortcut=True, name=""):
     c_ = int(ch_out * e)
     output1 = conv_bn(input, c_, 1, 1, 0, act=act, name=name + '.0')
     output2 = fluid.layers.pool2d(
@@ -208,13 +208,19 @@ def stack_conv(input, *args, **kwargs):
     return output
 
 
-def C3(input, ch_out, act, use_spp=False, name=""):
+def C3(input,
+       ch_out,
+       act,
+       use_spp=False,
+       drop_block=False,
+       is_test=False,
+       name=""):
     c_ = ch_out // 2
     cv1 = conv_bn(input, c_, 1, 1, 0, act, name=name + ".left")
     cv2 = conv_bn(input, c_, 1, 1, 0, act, name=name + ".right")
     if use_spp:
         cfg = [['basic_block', [c_, 1, act, False]],
-               ['spp', [c_, 1, act, False]],
+               ['spp_module', [c_, 1, act, False]],
                ['basic_block', [c_, 1, act, False]]]
     else:
         cfg = [['basic_block', [c_, 1, act, False]],
@@ -223,10 +229,116 @@ def C3(input, ch_out, act, use_spp=False, name=""):
 
     for i, (m, args) in enumerate(cfg):
         cv1 = eval(m)(cv1, *args, name=name + ".left.{}".format(i))
+        if drop_block and i == 1:
+            cv1 = DropBlock(cv1, 3, 0.9, is_test=is_test)
 
     cv = fluid.layers.concat([cv1, cv2], 1)
     cv = conv_bn(cv, ch_out, 1, 1, 0, act, name=name)
     return cv
+
+
+def bottle_block(input,
+                 ch_out,
+                 e=4,
+                 act='silu',
+                 use_spp=False,
+                 shortcut=True,
+                 name=""):
+    c_ = int(ch_out * e)
+    conv1 = conv_bn(input, ch_out, 1, 1, 0, act=act, name=name + '.0')
+    if use_spp:
+        conv2 = spp(conv1, name=name + ".1")
+    else:
+        conv2 = conv_bn(conv1, ch_out, 3, 1, 1, act=act, name=name + ".1")
+    conv3 = conv_bn(conv2, c_, 1, 1, 0, act=None, name=name + ".2")
+    if shortcut:
+        ch_in = input.shape[1]
+        if ch_in != ch_out:
+            short = conv_bn(input, c_, 1, 1, 0, act=None, name=name + '.short')
+        else:
+            short = input
+        output = fluid.layers.elementwise_add(
+            x=short, y=conv3, act=act, name=name + ".add")
+    else:
+        output = conv3
+    return output
+
+
+def B3(input,
+       ch_out,
+       e=4,
+       act='silu',
+       use_spp=False,
+       drop_block=False,
+       is_test=False,
+       name=""):
+    if use_spp:
+        cfg = [['bottle_block', [ch_out, 4, act, False]],
+               ['bottle_block', [ch_out, 4, act, True]],
+               ['bottle_block', [ch_out, 4, act, False]]]
+    else:
+        cfg = [['bottle_block', [ch_out, 4, act, False]],
+               ['bottle_block', [ch_out, 4, act, False]],
+               ['bottle_block', [ch_out, 4, act, False]]]
+
+    output = input
+    for i, (m, args) in enumerate(cfg):
+        output = eval(m)(output, *args, name=name + ".{}".format(i))
+        if drop_block and i == 1:
+            output = DropBlock(output, 3, 0.9, is_test=is_test)
+
+    return output
+
+
+def B2(input,
+       ch_out,
+       e=4,
+       act='silu',
+       use_spp=False,
+       drop_block=False,
+       is_test=False,
+       name=""):
+    if use_spp:
+        cfg = [['bottle_block', [ch_out, 4, act, True]],
+               ['bottle_block', [ch_out, 4, act, False]]]
+    else:
+        cfg = [['bottle_block', [ch_out, 4, act, False]],
+               ['bottle_block', [ch_out, 4, act, False]]]
+
+    output = input
+    for i, (m, args) in enumerate(cfg):
+        output = eval(m)(output, *args, name=name + ".{}".format(i))
+        if drop_block and i == 1:
+            output = DropBlock(output, 3, 0.9, is_test=is_test)
+
+    return output
+
+
+def spp(input, name=""):
+    output1 = fluid.layers.pool2d(
+        input=input,
+        pool_size=5,
+        pool_stride=1,
+        pool_padding=2,
+        ceil_mode=False,
+        pool_type='max')
+    output2 = fluid.layers.pool2d(
+        input=input,
+        pool_size=9,
+        pool_stride=1,
+        pool_padding=4,
+        ceil_mode=False,
+        pool_type='max')
+    output3 = fluid.layers.pool2d(
+        input=input,
+        pool_size=13,
+        pool_stride=1,
+        pool_padding=6,
+        ceil_mode=False,
+        pool_type='max')
+    output = fluid.layers.concat(
+        input=[input, output1, output2, output3], axis=1)
+    return output
 
 
 @register
@@ -275,13 +387,13 @@ class PPYOLOHead(object):
         self.name = weight_prefix_name
         if fpn_cfg is None:
             self.fpn_cfg = [
-                [[2, 'C3', [1024, act, True]]  # P3
+                [[2, 'B3', [320, 4, act, True, True]]  # P3
                  ],
                 [
                     [-1, 'conv_bn', [320, 1, 1, 0, act]],
                     [-1, 'upsample', [2]],
                     [[-1, 1], 'concat', [1]],
-                    [-1, 'C3', [640, act, False]]  # P4
+                    [-1, 'B3', [160, 4, act, False, True]]  # P4
                 ],
                 [[-1, 'conv_bn', [160, 1, 1, 0, act]], [-1, 'upsample', [2]],
                  [[-1, 0], 'concat', [1]]]
@@ -291,17 +403,17 @@ class PPYOLOHead(object):
 
         if pan_cfg is None:
             self.pan_cfg = [
-                [[0, 'C3', [320, act, False]]  # C3
+                [[0, 'B3', [80, 4, act, False, True]]  # C3
                  ],
                 [
-                    [-1, 'conv_bn', [320, 3, 2, 1, act]],
+                    [-1, 'conv_bn', [160, 3, 2, 1, act]],
                     [[-1, 1], 'concat', [1]],
-                    [-1, 'C3', [640, act, False]],  # C4
+                    [-1, 'B2', [160, 4, act, False, True]],  # C4
                 ],
                 [
-                    [-1, 'conv_bn', [640, 3, 2, 1, act]],
+                    [-1, 'conv_bn', [320, 3, 2, 1, act]],
                     [[-1, 2], 'concat', [1]],
-                    [-1, 'C3', [1024, act, False]]  # C5
+                    [-1, 'B2', [320, 4, act, False, True]]  # C5
                 ]
             ]
         else:
@@ -376,10 +488,17 @@ class PPYOLOHead(object):
                     inputs = output if f == -1 else layers[f]
                 else:
                     inputs = [output if idx == -1 else layers[idx] for idx in f]
-
-                output = eval(m)(inputs,
-                                 *args,
-                                 name=self.name + 'yolo_fpn.{}.{}'.format(i, j))
+                if m in ['B2', 'B3', 'C3']:
+                    output = eval(m)(
+                        inputs,
+                        *args,
+                        is_test=(not is_train),
+                        name=self.name + 'yolo_fpn.{}.{}'.format(i, j))
+                else:
+                    output = eval(m)(
+                        inputs,
+                        *args,
+                        name=self.name + 'yolo_fpn.{}.{}'.format(i, j))
             if self.drop_block and i < 2:
                 output = DropBlock(
                     output,
@@ -414,9 +533,17 @@ class PPYOLOHead(object):
                     inputs = output if f == -1 else layers[f]
                 else:
                     inputs = [output if idx == -1 else layers[idx] for idx in f]
-                output = eval(m)(inputs,
-                                 *args,
-                                 name=self.name + 'yolo_pan.{}.{}'.format(i, j))
+                if m in ['B2', 'B3', 'C3']:
+                    output = eval(m)(
+                        inputs,
+                        *args,
+                        is_test=(not is_train),
+                        name=self.name + 'yolo_pan.{}.{}'.format(i, j))
+                else:
+                    output = eval(m)(
+                        inputs,
+                        *args,
+                        name=self.name + 'yolo_pan.{}.{}'.format(i, j))
             if self.drop_block:
                 output = DropBlock(
                     output,
