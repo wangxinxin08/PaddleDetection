@@ -41,7 +41,7 @@ PPYOLOHead:
   yolo_loss: YOLOv3Loss
   nms: MatrixNMS
   drop_block: true
-  fpn_head: true
+  fpn_head: false
 
 YOLOv3Loss:
   ignore_thresh: 0.7
