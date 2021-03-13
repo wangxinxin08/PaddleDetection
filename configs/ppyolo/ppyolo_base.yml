@@ -82,10 +82,9 @@ LearningRate:
     steps: 4000
 
 OptimizerBuilder:
-  clip_grad_by_norm: 35.
+  # clip_grad_by_norm: 35.
   optimizer:
-    momentum: 0.9
-    type: Momentum
+    type: Adam
   regularizer:
     factor: 0.0005
     type: L2
