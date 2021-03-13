@@ -462,16 +462,12 @@ class YOLOv3Loss(object):
         # NOTE: tobj holds gt_score, obj_mask holds object existence mask
         obj_mask = fluid.layers.cast(tobj > 0., dtype="float32")
         obj_mask.stop_gradient = True
-        pos_num = fluid.layers.reduce_sum(obj_mask, dim=[1, 2, 3])
-        pos_num.stop_gradient = True
 
         # For positive objectness grids, objectness loss should be calculated
         # For negative objectness grids, objectness loss is calculated only iou_mask == 1.0
         loss_obj = fluid.layers.sigmoid_cross_entropy_with_logits(obj, obj_mask)
-        loss_obj_pos = fluid.layers.reduce_mean(loss_obj * tobj, dim=[1, 2, 3])
-        loss_obj_pos = loss_obj_pos * pos_num * num_classes
-        loss_obj_neg = fluid.layers.reduce_mean(
+        loss_obj_pos = fluid.layers.reduce_sum(loss_obj * tobj, dim=[1, 2, 3])
+        loss_obj_neg = fluid.layers.reduce_sum(
             loss_obj * (1.0 - obj_mask) * iou_mask, dim=[1, 2, 3])
-        loss_obj_neg = loss_obj_neg * pos_num * 3 * num_classes
 
         return loss_obj_pos, loss_obj_neg

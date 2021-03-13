@@ -1,6 +1,6 @@
 architecture: YOLOv3
 use_gpu: true
-max_iters: 90000
+max_iters: 60000
 log_smooth_window: 100
 log_iter: 100
 save_dir: output
@@ -71,18 +71,15 @@ MatrixNMS:
     post_threshold: 0.01
 
 LearningRate:
-  base_lr: 0.005
+  base_lr: 0.01
   schedulers:
-  - !PiecewiseDecay
-    gamma: 0.1
-    milestones:
-    - 60000
-  - !LinearWarmup
-    start_factor: 0.
-    steps: 4000
+  - !OneCycleLR
+    warmup_factor: 0.0
+    warmup_step: 6000
+    decay_factor: 0.1
+    total_step: 60000
 
 OptimizerBuilder:
-  # clip_grad_by_norm: 35.
   optimizer:
     type: Adam
   regularizer:
