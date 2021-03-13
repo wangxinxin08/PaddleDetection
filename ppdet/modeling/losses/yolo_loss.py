@@ -18,6 +18,7 @@ from __future__ import print_function
 
 from paddle import fluid
 from ppdet.core.workspace import register
+from ppdet.modeling.anchor_heads.ppyolo_head import yolo_box
 try:
     from collections.abc import Sequence
 except Exception:
@@ -189,9 +190,11 @@ class YOLOv3Loss(object):
                 loss_y = fluid.layers.reduce_sum(loss_y, dim=[1, 2, 3])
 
             # NOTE: we refined loss function of (w, h) as L1Loss
-            loss_w = fluid.layers.abs(w - tw) * tscale_tobj
+            dw = (fluid.layers.sigmoid(w) * 2)**2
+            dh = (fluid.layers.sigmoid(h) * 2)**2
+            loss_w = fluid.layers.abs(dw - tw) * tscale_tobj
             loss_w = fluid.layers.reduce_sum(loss_w, dim=[1, 2, 3])
-            loss_h = fluid.layers.abs(h - th) * tscale_tobj
+            loss_h = fluid.layers.abs(dh - th) * tscale_tobj
             loss_h = fluid.layers.reduce_sum(loss_h, dim=[1, 2, 3])
             if self._iou_loss is not None:
                 loss_iou = self._iou_loss(x, y, w, h, tx, ty, tw, th, anchors,
@@ -329,7 +332,7 @@ class YOLOv3Loss(object):
 
         # 1. get pred bbox, which is same with YOLOv3 infer mode, use yolo_box here
         # NOTE: img_size is set as 1.0 to get noramlized pred bbox
-        bbox, prob = fluid.layers.yolo_box(
+        bbox, prob = yolo_box(
             x=output,
             img_size=fluid.layers.ones(
                 shape=[batch_size, 2], dtype="int32"),
@@ -338,6 +341,7 @@ class YOLOv3Loss(object):
             conf_thresh=0.,
             downsample_ratio=downsample,
             clip_bbox=False,
+            name='obj_loss',
             scale_x_y=scale_x_y)
 
         # 2. split pred bbox and gt bbox by sample, calculate IoU between pred bbox

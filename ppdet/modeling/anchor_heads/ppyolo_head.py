@@ -33,7 +33,7 @@ except Exception:
     from collections import Sequence
 from ppdet.utils.check import check_version
 
-__all__ = ['PPYOLOHead']
+__all__ = ['PPYOLOHead', 'yolo_box']
 
 
 def create_tensor_from_numpy(numpy_array):
@@ -59,7 +59,7 @@ def add_coord(input, is_test=True):
         gi_np = np.reshape(gi_np, newshape=[1, 1, grid_y, grid_x])
         gi_np = np.tile(gi_np, reps=[batch_size, 1, 1, 1])
 
-        x_range = self._create_tensor_from_numpy(gi_np.astype(np.float32))
+        x_range = _create_tensor_from_numpy(gi_np.astype(np.float32))
         x_range.stop_gradient = True
 
         idx_j = np.array(
@@ -68,7 +68,7 @@ def add_coord(input, is_test=True):
         gj_np = np.repeat(idx_j, grid_x, axis=1)
         gj_np = np.reshape(gj_np, newshape=[1, 1, grid_y, grid_x])
         gj_np = np.tile(gi_np, reps=[batch_size, 1, 1, 1])
-        y_range = self._create_tensor_from_numpy(gj_np.astype(np.float32))
+        y_range = _create_tensor_from_numpy(gj_np.astype(np.float32))
         y_range.stop_gradient = True
 
     # NOTE: in training mode, H and W is variable for random shape,
@@ -595,7 +595,7 @@ class PPYOLOHead(object):
                                              len(self.anchor_masks[i]),
                                              self.num_classes,
                                              self.iou_aware_factor)
-            box, score = fluid.layers.yolo_box(
+            box, score = yolo_box(
                 x=output,
                 img_size=im_size,
                 anchors=self.mask_anchors[i],
@@ -658,3 +658,73 @@ class PPYOLOHead(object):
                 loss[k] = loss[k] + fpn_loss[k]
 
         return loss
+
+
+def yolo_box(x,
+             img_size,
+             anchors,
+             class_num,
+             conf_thresh,
+             downsample_ratio,
+             clip_bbox,
+             scale_x_y,
+             name=''):
+    shape = fluid.layers.shape(x)
+    b, c, h, w = shape[0], shape[1], shape[2], shape[3]
+    na = len(anchors) // 2
+    no = class_num + 5
+    x = fluid.layers.reshape(x, [b, na, no, h, w])
+    x = fluid.layers.transpose(x, perm=[0, 1, 3, 4, 2])
+    anchors = np.array(anchors).reshape((1, na, 1, 1, 2))
+    anchors = _create_tensor_from_numpy(
+        anchors.astype(np.float32), name='anchors' + name)
+    grid = _make_grid(w, h)
+    bias_x_y = 0.5 * (scale_x_y - 1)
+    im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
+    im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
+    xc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 0:1]) - bias_x_y +
+          grid[:, :, :, :, 0:1]) / w
+    yc = (scale_x_y * fluid.layers.sigmoid(x[:, :, :, :, 1:2]) - bias_x_y +
+          grid[:, :, :, :, 1:2]) / h
+    wc = (2 * fluid.layers.sigmoid(x[:, :, :, :, 2:3]))**2
+    wc = wc * anchors[:, :, :, :, 0:1] / (w * downsample_ratio)
+    hc = (2 * fluid.layers.sigmoid(x[:, :, :, :, 3:4]))**2
+    hc = hc * anchors[:, :, :, :, 1:2] / (h * downsample_ratio)
+    x1 = xc - wc * 0.5
+    y1 = yc - hc * 0.5
+    x2 = xc + wc * 0.5
+    y2 = yc + hc * 0.5
+    if clip_bbox:
+        x1 = fluid.layers.clip(x1, 0., 1.)
+        y1 = fluid.layers.clip(y1, 0., 1.)
+        x2 = fluid.layers.clip(x2, 0., 1.)
+        y2 = fluid.layers.clip(y2, 0., 1.)
+    x1 = x1 * im_w
+    y1 = y1 * im_h
+    x2 = x2 * im_w
+    y2 = y2 * im_h
+    bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
+    conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
+    mask = fluid.layers.cast(conf >= conf_thresh, 'float32')
+    conf = conf * mask
+    score = fluid.layers.sigmoid(x[:, :, :, :, 5:]) * conf
+    bbox = bbox * mask
+    bbox = fluid.layers.reshape(bbox, (b, -1, 4))
+    score = fluid.layers.reshape(score, (b, -1, class_num))
+    return bbox, score
+
+
+def _make_grid(nx, ny):
+    yv, xv = fluid.layers.meshgrid([
+        fluid.layers.range(0, ny, 1, 'float32'),
+        fluid.layers.range(0, nx, 1, 'float32')
+    ])
+    grid = fluid.layers.stack([xv, yv], axis=2)
+    return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
+
+
+def _create_tensor_from_numpy(numpy_array, name=None):
+    paddle_array = fluid.layers.create_global_var(
+        shape=numpy_array.shape, value=0., dtype=numpy_array.dtype, name=name)
+    fluid.layers.assign(numpy_array, paddle_array)
+    return paddle_array

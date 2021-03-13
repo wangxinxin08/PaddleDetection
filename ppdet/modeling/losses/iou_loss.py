@@ -246,8 +246,12 @@ class IouLoss(object):
         anchor_h = fluid.layers.crop(x=anchor_h_max, shape=dcx)
         anchor_h.stop_gradient = True
         # e^tw e^th
-        exp_dw = fluid.layers.exp(dw)
-        exp_dh = fluid.layers.exp(dh)
+        if is_gt:
+            exp_dw = dw
+            exp_dh = dh
+        else:
+            exp_dw = (fluid.layers.sigmoid(dw) * 2)**2
+            exp_dh = (fluid.layers.sigmoid(dh) * 2)**2
         pw = fluid.layers.elementwise_mul(exp_dw, anchor_w) / \
             (grid_x_act * downsample_ratio)
         ph = fluid.layers.elementwise_mul(exp_dh, anchor_h) / \

@@ -350,45 +350,37 @@ class Gt2YoloTargetV2(BaseOperator):
                 gt_wh = gt_label[:, 2:4]
                 r = gt_wh[None, :, :] / anchor[:, None, :]
                 mask = np.maximum(r, 1. / r).max(2) < self.anchor_t
-                an_idx, gt_idx = np.where(mask)
-                for a_i, g_i in zip(an_idx, gt_idx):
+                _, gt_idx = np.where(mask)
+                for g_i in gt_idx:
                     gx, gy, gw, gh, gcls, gs = gt_label[g_i]
+                    # find best match anchor index
+                    best_iou = 0.
+                    best_idx = -1
+                    for an_idx in range(anchor.shape[0]):
+                        iou = jaccard_overlap(
+                            [0., 0., gw, gh],
+                            [0., 0., anchor[an_idx, 0], anchor[an_idx, 1]])
+                        if iou > best_iou:
+                            best_iou = iou
+                            best_idx = an_idx
+
+                    if best_idx == -1:
+                        continue
+
                     gi = int(gx * grid_w)
                     gj = int(gy * grid_h)
-                    target[a_i, 0, gj, gi] = gx * grid_w - gi
-                    target[a_i, 1, gj, gi] = gy * grid_h - gj
-                    target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
-                    target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
-                    target[a_i, 4, gj, gi] = 2.0 - gw * gh
-                    target[a_i, 5, gj, gi] = gs
-                    target[a_i, int(6 + gcls), gj, gi] = 1.
+                    # x, y, w, h, scale
+                    target[best_idx, 0, gj, gi] = gx * grid_w - gi
+                    target[best_idx, 1, gj, gi] = gy * grid_h - gj
+                    target[best_idx, 2, gj, gi] = gw / anchor[best_idx][0]
+                    target[best_idx, 3, gj, gi] = gh / anchor[best_idx][1]
+                    target[best_idx, 4, gj, gi] = 2.0 - gw * gh
 
-                # for [1, 0], [0, 1], [-1, 0], [0, 1]
-                # for a_i, g_i in zip(an_idx, gt_idx):
-                #     gx, gy, gw, gh, gcls, gs = gt_label[g_i]
-                #     gij = []
-                #     gx1, gy1 = gx * grid_w, gy * grid_h
-                #     gx2, gy2 = (1 - gx) * grid_w, (1 - gy) * grid_h
-                #     if gx1 % 1. < self.bias and gx1 > 1.:
-                #         gij.append([int(gx1) - 1, int(gy1)])
-                #     if gy1 % 1. < self.bias and gy1 > 1.:
-                #         gij.append([int(gx1), int(gy1) - 1])
-                #     if gx2 % 1. < self.bias and gx2 > 1.:
-                #         gij.append([int(gx1) + 1, int(gy1)])
-                #     if gy2 % 1. < self.bias and gy2 > 1.:
-                #         gij.append([int(gx1), int(gy1) + 1])
+                    # objectness record gt_score
+                    target[best_idx, 5, gj, gi] = gs
 
-                #     for gi, gj in gij:
-                #         if target[a_i, 5, gj, gi] <= 0. or \
-                #             abs(target[a_i, 0, gj, gi]) + abs(target[a_i, 1, gj, gi]) \
-                #             - abs(gx * grid_w - gi) - abs(gy * grid_h - gj) > 0.:
-                #             target[a_i, 0, gj, gi] = gx * grid_w - gi
-                #             target[a_i, 1, gj, gi] = gy * grid_h - gj
-                #             target[a_i, 2, gj, gi] = np.log(gw / anchor[a_i][0])
-                #             target[a_i, 3, gj, gi] = np.log(gh / anchor[a_i][1])
-                #             target[a_i, 4, gj, gi] = 2.0 - gw * gh
-                #             target[a_i, 5, gj, gi] = gs
-                #             target[a_i, int(6 + gcls), gj, gi] = 1.
+                    # classification
+                    target[best_idx, 6 + gcls, gj, gi] = 1.
 
                 sample['target{}'.format(i)] = target
         return samples
