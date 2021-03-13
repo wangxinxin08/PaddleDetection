@@ -380,7 +380,7 @@ class Gt2YoloTargetV2(BaseOperator):
                     target[best_idx, 5, gj, gi] = gs
 
                     # classification
-                    target[best_idx, 6 + gcls, gj, gi] = 1.
+                    target[best_idx, int(6 + gcls), gj, gi] = 1.
 
                 sample['target{}'.format(i)] = target
         return samples
