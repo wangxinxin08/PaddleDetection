@@ -53,13 +53,13 @@ YOLOv3Loss:
 
 IouLoss:
   loss_weight: 2.5
-  max_height: 608
-  max_width: 608
+  max_height: 768
+  max_width: 768
 
 IouAwareLoss:
   loss_weight: 1.0
-  max_height: 608
-  max_width: 608
+  max_height: 768
+  max_width: 768
 
 MatrixNMS:
     background_label: -1
