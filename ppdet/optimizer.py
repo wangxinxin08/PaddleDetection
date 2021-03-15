@@ -18,6 +18,7 @@ from __future__ import print_function
 
 import math
 import logging
+import numpy as np
 
 from paddle import fluid
 
@@ -172,6 +173,56 @@ class CosineDecayWithSkip(object):
         else:
             skipped = steps >= self.skip_steps
             fluid.layers.cond(skipped, decay)
+        return lr
+
+
+@serializable
+class OneCycleLR(object):
+    def __init__(self, warmup_factor, decay_factor, total_step, warmup_step):
+        self.warmup_factor = warmup_factor
+        self.warmup_step = warmup_step
+        self.decay_factor = decay_factor
+        self.total_step = total_step
+
+    def __call__(self, base_lr, learning_rate=None):
+        def annealing_cos(start, end, pct):
+            "Cosine anneal from `start` to `end` as pct goes from 0.0 to 1.0."
+            cos_out = fluid.layers.cos(pct * np.pi) + 1.
+            return cos_out * (start - end) / 2. + end
+
+        warmup_start_lr = base_lr * self.warmup_factor
+        decay_end_lr = base_lr * self.decay_factor
+        warmup_step = self.warmup_step
+
+        global_step = _decay_step_counter()
+
+        lr = fluid.layers.create_global_var(
+            shape=[1],
+            value=float(base_lr),
+            dtype='float32',
+            persistable=True,
+            name="learning_rate")
+
+        warmup_step_var = fluid.layers.fill_constant(
+            shape=[1],
+            dtype='float32',
+            value=float(warmup_step),
+            force_cpu=True)
+
+        warmup_pred = global_step < warmup_step_var
+        decay_pred = global_step >= warmup_step_var
+
+        def warmup_lr():
+            return annealing_cos(warmup_start_lr, base_lr,
+                                 global_step / warmup_step_var)
+
+        def decay_lr():
+            return annealing_cos(base_lr, decay_end_lr,
+                                 (global_step - warmup_step_var) /
+                                 (self.total_step - warmup_step))
+
+        lr = fluid.layers.case(pred_fn_pairs=[(warmup_pred, warmup_lr),
+                                              (decay_pred, decay_lr)])
         return lr
 
 

@@ -234,8 +234,8 @@ class ResNet(object):
                 param_attr=pattr,
                 bias_attr=battr,
                 moving_mean_name=bn_name + '_mean',
-                moving_variance_name=bn_name + '_variance',
-                use_global_stats=global_stats)
+                moving_variance_name=bn_name + '_variance')
+                # use_global_stats=global_stats)
             scale = fluid.framework._get_var(pattr.name)
             bias = fluid.framework._get_var(battr.name)
         elif self.norm_type == 'affine_channel':

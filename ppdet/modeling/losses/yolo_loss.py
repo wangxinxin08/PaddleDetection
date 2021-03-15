@@ -164,6 +164,8 @@ class YOLOv3Loss(object):
                                                       num_classes)
             tx, ty, tw, th, tscale, tobj, tcls = self._split_target(target)
 
+            pos_num = fluid.layers.reduce_sum(tobj, dim=[1, 2, 3]) + 1
+
             tscale_tobj = tscale * tobj
 
             scale_x_y = self.scale_x_y if not isinstance(
@@ -198,7 +200,7 @@ class YOLOv3Loss(object):
                                           downsample, self._train_batch_size,
                                           scale_x_y)
                 loss_iou = loss_iou * tscale_tobj
-                loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3])
+                loss_iou = fluid.layers.reduce_sum(loss_iou, dim=[1, 2, 3]) / pos_num
                 loss_ious.append(fluid.layers.reduce_mean(loss_iou) * weight)
 
             if self._iou_aware_loss is not None:
@@ -207,7 +209,7 @@ class YOLOv3Loss(object):
                     self._train_batch_size, scale_x_y)
                 loss_iou_aware = loss_iou_aware * tobj
                 loss_iou_aware = fluid.layers.reduce_sum(
-                    loss_iou_aware, dim=[1, 2, 3])
+                    loss_iou_aware, dim=[1, 2, 3]) / pos_num
                 loss_iou_awares.append(
                     fluid.layers.reduce_mean(loss_iou_aware) * weight)
 
@@ -217,12 +219,12 @@ class YOLOv3Loss(object):
 
             loss_cls = fluid.layers.sigmoid_cross_entropy_with_logits(cls, tcls)
             loss_cls = fluid.layers.elementwise_mul(loss_cls, tobj, axis=0)
-            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4])
+            loss_cls = fluid.layers.reduce_sum(loss_cls, dim=[1, 2, 3, 4]) / pos_num
 
-            loss_xys.append(fluid.layers.reduce_mean(loss_x + loss_y) * weight)
-            loss_whs.append(fluid.layers.reduce_mean(loss_w + loss_h) * weight)
+            loss_xys.append(fluid.layers.reduce_mean((loss_x + loss_y) / pos_num) * weight)
+            loss_whs.append(fluid.layers.reduce_mean((loss_w + loss_h) / pos_num) * weight)
             loss_objs.append(
-                fluid.layers.reduce_mean(loss_obj_pos + loss_obj_neg) * weight)
+                fluid.layers.reduce_mean((loss_obj_pos + loss_obj_neg) / pos_num) * weight)
             loss_clss.append(fluid.layers.reduce_mean(loss_cls) * weight)
 
         losses_all = {
