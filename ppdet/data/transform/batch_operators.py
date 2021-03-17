@@ -380,7 +380,7 @@ class Gt2YoloTarget_1vN(BaseOperator):
             assigner = ATSS_Assigner(anchors=anchors,
                                     gts=bboxes,
                                     num_level_bboxes=num_level_bboxes,
-                                    topk=3)
+                                    topk=9)
             assigned_result, assigned_iou = assigner.assign()
             pos_idx = assigned_result>=0
             gt_bboxes = bboxes[assigned_result]
