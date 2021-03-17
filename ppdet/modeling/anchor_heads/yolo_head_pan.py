@@ -522,15 +522,14 @@ class YOLOv3HeadPAN(object):
                                              self.iou_aware_factor)
             scale_x_y = self.scale_x_y if not isinstance(
                 self.scale_x_y, Sequence) else self.scale_x_y[i]
-            box, score = fluid.layers.yolo_box(
+            box, score = self.yolo_box(
                 x=output,
                 img_size=im_size,
                 anchors=self.mask_anchors[i],
                 class_num=self.num_classes,
                 conf_thresh=self.nms.score_threshold,
                 downsample_ratio=self.downsample[i],
-                name=self.prefix_name + "yolo_box" + str(i),
-                clip_bbox=self.clip_bbox,
+                clip_bbox=True,
                 scale_x_y=scale_x_y)
             boxes.append(box)
             scores.append(fluid.layers.transpose(score, perm=[0, 2, 1]))
@@ -546,3 +545,59 @@ class YOLOv3HeadPAN(object):
             yolo_scores = fluid.layers.transpose(yolo_scores, perm=[0, 2, 1])
         pred = self.nms(bboxes=yolo_boxes, scores=yolo_scores)
         return {'bbox': pred}
+
+    def _make_grid(self, nx, ny):
+        yv, xv = fluid.layers.meshgrid([
+            fluid.layers.range(0, ny, 1, 'float32'),
+            fluid.layers.range(0, nx, 1, 'float32')
+        ])
+        grid = fluid.layers.stack([xv, yv], axis=2)
+        return fluid.layers.reshape(grid, (1, 1, ny, nx, 2))
+
+    def yolo_box(self, x, img_size, anchors, class_num, conf_thresh,
+                 downsample_ratio, clip_bbox, scale_x_y):
+        shape = fluid.layers.shape(x)
+        b, c, h, w = shape[0], shape[1], shape[2], shape[3]
+        na = len(anchors) // 2
+        no = class_num + 5
+        x = fluid.layers.reshape(x, [b, na, no, h, w])
+        x = fluid.layers.transpose(x, perm=[0, 1, 3, 4, 2])
+        anchors = np.array(anchors).reshape((1, na, 1, 1, 2))
+        anchors = self._create_tensor_from_numpy(anchors)
+        grid = self._make_grid(w, h)
+        bias_x_y = 0.5 * (scale_x_y - 1)
+        im_h = fluid.layers.reshape(img_size[:, 0:1], (b, 1, 1, 1, 1))
+        im_w = fluid.layers.reshape(img_size[:, 1:2], (b, 1, 1, 1, 1))
+        xc = (scale_x_y * x[:, :, :, :, 0:1] - bias_x_y +
+              grid[:, :, :, :, 0:1]) / w
+        yc = (scale_x_y * x[:, :, :, :, 1:2] - bias_x_y +
+              grid[:, :, :, :, 1:2]) / h
+        wc = fluid.layers.exp(x[:, :, :, :, 2:3]) * anchors[:, :, :, :, 0:1] / (
+            w * downsample_ratio)
+        hc = fluid.layers.exp(x[:, :, :, :, 3:4]) * anchors[:, :, :, :, 1:2] / (
+            h * downsample_ratio)
+        x1 = xc - wc * 0.5
+        y1 = yc - hc * 0.5
+        x2 = xc + wc * 0.5
+        y2 = yc + hc * 0.5
+        if clip_bbox:
+            x1 = fluid.layers.clip(x1, 0., 1.)
+            y1 = fluid.layers.clip(y1, 0., 1.)
+            x2 = fluid.layers.clip(x2, 0., 1.)
+            y2 = fluid.layers.clip(y2, 0., 1.)
+        x1 = x1 * im_w
+        y1 = y1 * im_h
+        x2 = x2 * im_w
+        y2 = y2 * im_h
+        bbox = fluid.layers.concat([x1, y1, x2, y2], axis=-1)
+
+        conf = fluid.layers.sigmoid(x[:, :, :, :, 4:5])
+        mask = fluid.layers.cast(conf >= conf_thresh, 'float32')
+        conf = conf * mask
+        score = fluid.layers.sigmoid(x[:, :, :, :, 5:]) * conf
+
+        bbox = bbox * mask
+
+        bbox = fluid.layers.reshape(bbox, (b, -1, 4))
+        score = fluid.layers.reshape(score, (b, -1, class_num))
+        return bbox, score
